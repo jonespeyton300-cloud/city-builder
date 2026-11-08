@@ -1,1 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My City Builder</title>
+<style>
+* { box-sizing: border-box; }
 
+body {
+  margin: 0;
+  background: #202a35;
+  color: white;
+  font-family: Arial, sans-serif;
+}
+
+header {
+  background: #17212b;
+  padding: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+h1 { margin: 0; font-size: 22px; }
+
+.stats {
+  display: flex;
+  gap: 18px;
+  font-weight: bold;
+  color: #8de6a0;
+}
+
+main {
+  max-width: 1100px;
+  margin: 20px auto;
+  padding: 10px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+button {
+  border: 2px solid #526477;
+  background: #344454;
+  color: white;
+  padding: 11px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+button:hover { background: #50677c; }
+
+button.active {
+  background: #238c55;
+  border-color: #66e39a;
+}
+
+.game-container {
+  background: #17212b;
+  padding: 10px;
+  border-radius: 10px;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: crosshair;
+  image-rendering: pixelated;
+}
+
+.info {
+  color: #bdc9d5;
+  margin-top: 12px;
+  font-size: 14px;
+}
+
+@media(max-width:600px) {
+  .stats { font-size: 13px; gap: 9px; }
+  button { padding: 9px; }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <h1>🏙️ My City Builder</h1>
+  <div class="stats">
+    <span>💰 $<span id="money">1000</span></span>
+    <span>🏠 <span id="buildings">0</span> Buildings</span>
+  </div>
+</header>
+
+<main>
+
+  <div class="toolbar">
+    <button class="active" data-tool="road">🛣️ Road ($10)</button>
+    <button data-tool="house">🏠 House ($100)</button>
+    <button data-tool="shop">🏪 Shop ($150)</button>
+    <button data-tool="park">🌳 Park ($50)</button>
+    <button data-tool="demolish">🗑️ Demolish</button>
+  </div>
+
+  <div class="game-container">
+    <canvas id="game" width="960" height="640"></canvas>
+  </div>
+
+  <div class="info">
+    Select a building above and click an empty tile to construct it.
+    Build roads, houses, shops and parks to create your city!
+  </div>
+
+</main>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const TILE = 32;
+const COLS = 30;
+const ROWS = 20;
+
+let money = 1000;
+let selectedTool = "road";
+
+const prices = {
+  road: 10,
+  house: 100,
+  shop: 150,
+  park: 50
+};
+
+const world = Array.from(
+  {length: ROWS},
+  () => Array(COLS).fill(null)
+);
+
+const colors = {
+  grass: "#79ad59",
+  road: "#686d73",
+  house: "#e5c49a",
+  shop: "#e5a34f",
+  park: "#3e9d58"
+};
+
+function drawGrass(x, y) {
+  ctx.fillStyle = colors.grass;
+  ctx.fillRect(x, y, TILE, TILE);
+
+  ctx.fillStyle = "#8cbd68";
+  ctx.fillRect(x + 5, y + 7, 3, 3);
+  ctx.fillRect(x + 23, y + 22, 3, 3);
+}
+
+function drawRoad(x, y) {
+  ctx.fillStyle = colors.road;
+  ctx.fillRect(x, y, TILE, TILE);
+
+  ctx.strokeStyle = "#d9d4a1";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.moveTo(x + 16, y);
+  ctx.lineTo(x + 16, y + TILE);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawHouse(x, y) {
+  ctx.fillStyle = "#8e573b";
+  ctx.fillRect(x + 4, y + 11, 24, 18);
+
+  ctx.fillStyle = colors.house;
+  ctx.fillRect(x + 6, y + 13, 20, 16);
+
+  ctx.fillStyle = "#a84b3f";
+  ctx.beginPath();
+  ctx.moveTo(x + 2, y + 14);
+  ctx.lineTo(x + 16, y + 2);
+  ctx.lineTo(x + 30, y + 14);
+  ctx.fill();
+
+  ctx.fillStyle = "#6b4735";
+  ctx.fillRect(x + 13, y + 20, 7, 9);
+
+  ctx.fillStyle = "#7ed6ed";
+  ctx.fillRect(x + 7, y + 17, 5, 5);
+  ctx.fillRect(x + 21, y + 17, 5, 5);
+}
+
+function drawShop(x, y) {
+  ctx.fillStyle = "#f1d2a0";
+  ctx.fillRect(x + 3, y + 10, 26, 19);
+
+  ctx.fillStyle = colors.shop;
+  ctx.fillRect(x + 3, y + 5, 26, 8);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(x + 6, y + 7, 5, 5);
+  ctx.fillRect(x + 17, y + 7, 5, 5);
+
+  ctx.fillStyle = "#5c4838";
+  ctx.fillRect(x + 12, y + 20, 8, 9);
+}
+
+function drawPark(x, y) {
+  ctx.fillStyle = "#b8d88c";
+  ctx.fillRect(x + 3, y + 3, 26, 26);
+
+  ctx.fillStyle = "#805332";
+  ctx.fillRect(x + 14, y + 15, 5, 13);
+
+  ctx.fillStyle = "#267b3e";
+  ctx.beginPath();
+  ctx.arc(x + 16, y + 12, 11, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#64bd65";
+  ctx.beginPath();
+  ctx.arc(x + 12, y + 10, 5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawTile(x, y, type) {
+  if (!type) return;
+
+  if (type === "road") drawRoad(x, y);
+  if (type === "house") drawHouse(x, y);
+  if (type === "shop") drawShop(x, y);
+  if (type === "park") drawPark(x, y);
+}
+
+function drawWorld() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const x = col * TILE;
+      const y = row * TILE;
+
+      drawGrass(x, y);
+      drawTile(x, y, world[row][col]);
+
+      ctx.strokeStyle = "rgba(0,0,0,0.12)";
+      ctx.strokeRect(x, y, TILE, TILE);
+    }
+  }
+}
+
+function updateStats() {
+  document.getElementById("money").textContent = money;
+
+  let count = 0;
+
+  for (const row of world) {
+    for (const tile of row) {
+      if (tile && tile !== "road") count++;
+    }
+  }
+
+  document.getElementById("buildings").textContent = count;
+}
+
+document.querySelectorAll("[data-tool]").forEach(button => {
+  button.addEventListener("click", () => {
+    selectedTool = button.dataset.tool;
+
+    document.querySelectorAll("[data-tool]").forEach(b => {
+      b.classList.remove("active");
+    });
+
+    button.classList.add("active");
+  });
+});
+
+canvas.addEventListener("click", event => {
+  const rect = canvas.getBoundingClientRect();
+
+  const x = Math.floor(
+    (event.clientX - rect.left) * canvas.width / rect.width
+  );
+
+  const y = Math.floor(
+    (event.clientY - rect.top) * canvas.height / rect.height
+  );
+
+  const col = Math.floor(x / TILE);
+  const row = Math.floor(y / TILE);
+
+  if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
+
+  const existing = world[row][col];
+
+  if (selectedTool === "demolish") {
+    if (existing) {
+      money += Math.floor((prices[existing] || 0) / 2);
+      world[row][col] = null;
+    }
+  } else {
+    if (existing) return;
+
+    const price = prices[selectedTool];
+
+    if (money < price) {
+      alert("Not enough money!");
+      return;
+    }
+
+    money -= price;
+    world[row][col] = selectedTool;
+  }
+
+  drawWorld();
+  updateStats();
+});
+
+drawWorld();
+updateStats();
+</script>
+
+</body>
+</html>
