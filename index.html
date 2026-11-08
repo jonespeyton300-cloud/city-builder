@@ -89,7 +89,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 <div id="gameArea">
   <canvas id="game"></canvas>
   <div id="toast"></div>
-  <div id="help">Cars now turn smoothly. Buildings face their nearest road and have connected walkways.</div>
+  <div id="help">Hold and drag to build roads! Buildings face their nearest road and have connected walkways.</div>
 </div>
 </main>
 
@@ -116,7 +116,11 @@ let roads=new Set();
 let buildings=[];
 let cars=[];
 let lastTime=0,spawnTimer=0,signalClock=0;
-let dragging=false,lastPointer=null,toastTimer=null;
+let dragging=false;
+let paintingRoad=false;
+let lastPointer=null;
+let lastPaintTile=null;
+let toastTimer=null;
 
 const prices={
  road:10,house:100,apartment:350,shop:220,
@@ -249,7 +253,6 @@ function isIntersection(x,y){
   return hasRoad(x,y)&&connectionCount(neighbors(x,y))===4;
 }
 
-/* Draw roads and exposed sidewalk edges. */
 function drawRoad(x,y,px,py){
   const n=neighbors(x,y);
   const count=connectionCount(n);
@@ -515,7 +518,6 @@ function drawBuildingDoor(b,px,py,w,h){
   }
 }
 
-/* Vehicle drawing: the front of each car points along its angle. */
 function drawCar(car){
   ctx.save();
   ctx.translate(car.x,car.y);
@@ -590,7 +592,6 @@ function draw(){
   ctx.restore();
 }
 
-/* Find a connected road route using breadth-first search. */
 function findPath(start,goal){
   const queue=[start];
   const cameFrom=new Map();
@@ -648,9 +649,7 @@ function spawnCar(){
   const dy=ny-y;
 
   cars.push({
-    path,
-    index:0,
-    progress:0,
+    path,index:0,progress:0,
     x:x*TILE+TILE/2,
     y:y*TILE+TILE/2,
     dx,dy,
@@ -660,7 +659,6 @@ function spawnCar(){
   });
 }
 
-/* Smooth vehicle movement, lane changes and corner rotation. */
 function updateCars(dt){
   const laneOffset=(dx,dy)=>{
     if(dy!==0)return {x:dy>0?-5:5,y:0};
@@ -690,7 +688,6 @@ function updateCars(dt){
     const dx=next[0]-current[0];
     const dy=next[1]-current[1];
 
-    // Stop before entering a red-light intersection.
     if(isIntersection(next[0],next[1])){
       const vertical=dy!==0;
       const green=vertical?signalClock<7:signalClock>=7;
@@ -732,7 +729,6 @@ function updateCars(dt){
       nextAngle=Math.atan2(nextDY,nextDX);
     }
 
-    // Begin preparing for the next turn near the end of this road tile.
     const turnStart=0.65;
     const turnProgress=Math.max(
       0,
@@ -780,13 +776,20 @@ document.querySelectorAll(".tool").forEach(button=>{
   });
 });
 
-/* Mouse and touch controls */
+/* Mouse and touch controls, including road painting. */
 canvas.addEventListener("pointerdown",e=>{
   canvas.setPointerCapture(e.pointerId);
+
   lastPointer={x:e.offsetX,y:e.offsetY};
   dragging=selectedTool==="pan";
+  paintingRoad=selectedTool==="road";
 
-  if(!dragging){
+  if(paintingRoad){
+    const tile=tileAt(e.offsetX,e.offsetY);
+    lastPaintTile=key(tile.x,tile.y);
+    placeTile(tile.x,tile.y);
+    draw();
+  }else if(!dragging){
     const tile=tileAt(e.offsetX,e.offsetY);
     placeTile(tile.x,tile.y);
     draw();
@@ -794,22 +797,37 @@ canvas.addEventListener("pointerdown",e=>{
 });
 
 canvas.addEventListener("pointermove",e=>{
-  if(!dragging||!lastPointer)return;
+  if(dragging&&lastPointer){
+    cameraX+=e.offsetX-lastPointer.x;
+    cameraY+=e.offsetY-lastPointer.y;
 
-  cameraX+=e.offsetX-lastPointer.x;
-  cameraY+=e.offsetY-lastPointer.y;
+    lastPointer={x:e.offsetX,y:e.offsetY};
+    draw();
+    return;
+  }
 
-  lastPointer={x:e.offsetX,y:e.offsetY};
-  draw();
+  if(paintingRoad&&selectedTool==="road"){
+    const tile=tileAt(e.offsetX,e.offsetY);
+    const tileKey=key(tile.x,tile.y);
+
+    if(tileKey!==lastPaintTile){
+      lastPaintTile=tileKey;
+      placeTile(tile.x,tile.y);
+      draw();
+    }
+  }
 });
 
 function endPointer(){
   dragging=false;
+  paintingRoad=false;
   lastPointer=null;
+  lastPaintTile=null;
 }
 
 canvas.addEventListener("pointerup",endPointer);
 canvas.addEventListener("pointercancel",endPointer);
+canvas.addEventListener("lostpointercapture",endPointer);
 
 canvas.addEventListener("wheel",e=>{
   e.preventDefault();
@@ -910,7 +928,7 @@ document.getElementById("newCity").onclick=()=>{
   notify("New city started!");
 };
 
-/* Start the game */
+/* Start */
 updateUI();
 resize();
 
