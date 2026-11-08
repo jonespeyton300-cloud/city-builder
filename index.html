@@ -89,7 +89,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 <div id="gameArea">
   <canvas id="game"></canvas>
   <div id="toast"></div>
-  <div id="help">Select a tool and click the map. Roads connect automatically. Use Move Camera to drag, scroll to zoom, or use the arrow keys.</div>
+  <div id="help">Place roads and buildings. Buildings placed beside roads get an entrance walkway. Select Move Camera to drag the map. Scroll to zoom.</div>
 </div>
 </main>
 
@@ -97,113 +97,99 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 (() => {
 "use strict";
 
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
-const area = document.getElementById("gameArea");
-const moneyLabel = document.getElementById("money");
-const buildingLabel = document.getElementById("buildingCount");
-const carLabel = document.getElementById("carCount");
-const toast = document.getElementById("toast");
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+const area=document.getElementById("gameArea");
+const moneyLabel=document.getElementById("money");
+const buildingLabel=document.getElementById("buildingCount");
+const carLabel=document.getElementById("carCount");
+const toast=document.getElementById("toast");
 
-const TILE = 32;
-const WORLD_W = 100;
-const WORLD_H = 100;
+const TILE=32,WORLD_W=100,WORLD_H=100;
 
-let money = 5000;
-let selectedTool = "road";
-let zoom = 1;
-let cameraX = 0;
-let cameraY = 0;
-let roads = new Set();
-let buildings = [];
-let cars = [];
-let lastTime = 0;
-let spawnTimer = 0;
-let signalClock = 0;
-let dragging = false;
-let dragMoved = false;
-let lastPointer = null;
-let toastTimer = null;
+let money=5000;
+let selectedTool="road";
+let zoom=1,cameraX=0,cameraY=0;
+let roads=new Set();
+let buildings=[];
+let cars=[];
+let lastTime=0,spawnTimer=0,signalClock=0;
+let dragging=false,lastPointer=null,toastTimer=null;
 
-const prices = {
-  road:10, house:100, apartment:350, shop:220,
-  gas:300, park:100, school:500, police:700, fire:700
+const prices={
+ road:10,house:100,apartment:350,shop:220,
+ gas:300,park:100,school:500,police:700,fire:700
 };
 
-const buildingInfo = {
-  house:{w:1,h:1,color:"#c98e55",name:"House"},
-  apartment:{w:2,h:2,color:"#b8a6c9",name:"Apartments"},
-  shop:{w:2,h:2,color:"#e4b85e",name:"Store"},
-  gas:{w:2,h:2,color:"#5b9cbb",name:"Gas Station"},
-  park:{w:2,h:2,color:"#62a65e",name:"Park"},
-  school:{w:3,h:2,color:"#d8c27c",name:"School"},
-  police:{w:2,h:2,color:"#6489b7",name:"Police Station"},
-  fire:{w:2,h:2,color:"#c75f51",name:"Fire Station"}
+const buildingInfo={
+ house:{w:1,h:1,color:"#c98e55",name:"House"},
+ apartment:{w:2,h:2,color:"#b8a6c9",name:"Apartments"},
+ shop:{w:2,h:2,color:"#e4b85e",name:"Store"},
+ gas:{w:2,h:2,color:"#5b9cbb",name:"Gas Station"},
+ park:{w:2,h:2,color:"#62a65e",name:"Park"},
+ school:{w:3,h:2,color:"#d8c27c",name:"School"},
+ police:{w:2,h:2,color:"#6489b7",name:"Police Station"},
+ fire:{w:2,h:2,color:"#c75f51",name:"Fire Station"}
 };
 
-const key = (x,y) => `${x},${y}`;
-const parseKey = k => k.split(",").map(Number);
-const hasRoad = (x,y) => roads.has(key(x,y));
-const inside = (x,y) => x>=0 && y>=0 && x<WORLD_W && y<WORLD_H;
+const key=(x,y)=>`${x},${y}`;
+const parseKey=k=>k.split(",").map(Number);
+const hasRoad=(x,y)=>roads.has(key(x,y));
+const inside=(x,y)=>x>=0&&y>=0&&x<WORLD_W&&y<WORLD_H;
 
 function notify(message){
-  toast.textContent = message;
+  toast.textContent=message;
   toast.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=>toast.classList.remove("show"),1800);
+  toastTimer=setTimeout(()=>toast.classList.remove("show"),1800);
 }
 
 function updateUI(){
-  moneyLabel.textContent = "$"+money.toLocaleString();
-  buildingLabel.textContent = buildings.length;
-  carLabel.textContent = cars.length;
+  moneyLabel.textContent="$"+money.toLocaleString();
+  buildingLabel.textContent=buildings.length;
+  carLabel.textContent=cars.length;
 }
 
 function resize(){
-  const dpr = Math.min(window.devicePixelRatio || 1,2);
-  canvas.width = Math.floor(area.clientWidth*dpr);
-  canvas.height = Math.floor(area.clientHeight*dpr);
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  canvas.width=Math.floor(area.clientWidth*dpr);
+  canvas.height=Math.floor(area.clientHeight*dpr);
   ctx.setTransform(dpr,0,0,dpr,0,0);
   draw();
 }
 window.addEventListener("resize",resize);
 
 function screenToWorld(sx,sy){
-  return {
-    x:(sx-cameraX)/zoom,
-    y:(sy-cameraY)/zoom
-  };
+  return{x:(sx-cameraX)/zoom,y:(sy-cameraY)/zoom};
 }
 
 function tileAt(sx,sy){
-  const p = screenToWorld(sx,sy);
-  return {x:Math.floor(p.x/TILE),y:Math.floor(p.y/TILE)};
+  const p=screenToWorld(sx,sy);
+  return{x:Math.floor(p.x/TILE),y:Math.floor(p.y/TILE)};
 }
 
 function buildingAt(x,y){
   return buildings.find(b=>
-    x>=b.x && y>=b.y && x<b.x+b.w && y<b.y+b.h
+    x>=b.x&&y>=b.y&&x<b.x+b.w&&y<b.y+b.h
   );
 }
 
-function occupied(x,y){
-  return !!buildingAt(x,y);
-}
+function occupied(x,y){return !!buildingAt(x,y);}
 
 function placeTile(x,y){
-  if(!inside(x,y)) return;
+  if(!inside(x,y))return;
 
   if(selectedTool==="demolish"){
     if(hasRoad(x,y)){
       roads.delete(key(x,y));
-      money += 5;
-      cars = [];
+      cars=[];
+      money+=5;
       notify("Road demolished");
     }else{
       const b=buildingAt(x,y);
       if(b){
         buildings=buildings.filter(item=>item!==b);
-        money += Math.floor((prices[b.type]||0)*0.4);
+        money+=Math.floor((prices[b.type]||0)*0.4);
         notify(b.name+" demolished");
       }
     }
@@ -211,16 +197,13 @@ function placeTile(x,y){
     return;
   }
 
-  if(selectedTool==="pan") return;
+  if(selectedTool==="pan")return;
 
   const price=prices[selectedTool];
-  if(money<price){
-    notify("Not enough money!");
-    return;
-  }
+  if(money<price){notify("Not enough money!");return;}
 
   if(selectedTool==="road"){
-    if(occupied(x,y) || hasRoad(x,y)) return;
+    if(occupied(x,y)||hasRoad(x,y))return;
     roads.add(key(x,y));
     money-=price;
     updateUI();
@@ -228,7 +211,7 @@ function placeTile(x,y){
   }
 
   const info=buildingInfo[selectedTool];
-  if(!info) return;
+  if(!info)return;
 
   for(let yy=y;yy<y+info.h;yy++){
     for(let xx=x;xx<x+info.w;xx++){
@@ -240,8 +223,7 @@ function placeTile(x,y){
   }
 
   buildings.push({
-    x,y,w:info.w,h:info.h,type:selectedTool,
-    name:info.name
+    x,y,w:info.w,h:info.h,type:selectedTool,name:info.name
   });
   money-=price;
   updateUI();
@@ -249,7 +231,7 @@ function placeTile(x,y){
 }
 
 function neighbors(x,y){
-  return {
+  return{
     n:hasRoad(x,y-1),
     e:hasRoad(x+1,y),
     s:hasRoad(x,y+1),
@@ -262,83 +244,133 @@ function connectionCount(n){
 }
 
 function isIntersection(x,y){
-  return hasRoad(x,y) && connectionCount(neighbors(x,y))===4;
+  return hasRoad(x,y)&&connectionCount(neighbors(x,y))===4;
 }
 
+/* Sidewalks are drawn along the exposed edges of the road network. */
 function drawRoad(x,y,px,py){
   const n=neighbors(x,y);
   const count=connectionCount(n);
-  const cx=px+TILE/2, cy=py+TILE/2;
+  const cx=px+TILE/2,cy=py+TILE/2;
 
   ctx.fillStyle="#454a50";
   ctx.fillRect(px,py,TILE,TILE);
 
-  // Road shoulders and edge markings
-  ctx.strokeStyle="#aeb2b3";
-  ctx.lineWidth=1.4;
+  // Sidewalks on the outside edges of the road network
+  ctx.fillStyle="#b9b8ae";
+  if(!n.n)ctx.fillRect(px,py,TILE,6);
+  if(!n.s)ctx.fillRect(px,py+TILE-6,TILE,6);
+  if(!n.w)ctx.fillRect(px,py,6,TILE);
+  if(!n.e)ctx.fillRect(px+TILE-6,py,6,TILE);
+
+  // Curb edges
+  ctx.strokeStyle="#e0ded4";
+  ctx.lineWidth=1;
   ctx.beginPath();
-  if(n.n||n.s){
-    ctx.moveTo(px+4,py);ctx.lineTo(px+4,py+TILE);
-    ctx.moveTo(px+TILE-4,py);ctx.lineTo(px+TILE-4,py+TILE);
-  }
-  if(n.e||n.w){
-    ctx.moveTo(px,py+4);ctx.lineTo(px+TILE,py+4);
-    ctx.moveTo(px,py+TILE-4);ctx.lineTo(px+TILE,py+TILE-4);
-  }
+  if(!n.n){ctx.moveTo(px,py+6);ctx.lineTo(px+TILE,py+6);}
+  if(!n.s){ctx.moveTo(px,py+TILE-6);ctx.lineTo(px+TILE,py+TILE-6);}
+  if(!n.w){ctx.moveTo(px+6,py);ctx.lineTo(px+6,py+TILE);}
+  if(!n.e){ctx.moveTo(px+TILE-6,py);ctx.lineTo(px+TILE-6,py+TILE);}
   ctx.stroke();
 
-  // Center lane markings
+  // Yellow center markings
   ctx.strokeStyle="#f4d35e";
-  ctx.lineWidth=1.6;
+  ctx.lineWidth=1.5;
   ctx.setLineDash([5,5]);
   ctx.beginPath();
-  if(n.n){ctx.moveTo(cx,cy);ctx.lineTo(cx,py);}
-  if(n.s){ctx.moveTo(cx,cy);ctx.lineTo(cx,py+TILE);}
-  if(n.e){ctx.moveTo(cx,cy);ctx.lineTo(px+TILE,cy);}
-  if(n.w){ctx.moveTo(cx,cy);ctx.lineTo(px,cy);}
+  if(n.n){ctx.moveTo(cx,cy);ctx.lineTo(cx,py+6);}
+  if(n.s){ctx.moveTo(cx,cy);ctx.lineTo(cx,py+TILE-6);}
+  if(n.e){ctx.moveTo(cx,cy);ctx.lineTo(px+TILE-6,cy);}
+  if(n.w){ctx.moveTo(cx,cy);ctx.lineTo(px+6,cy);}
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Sidewalk-style corners at connected edges
-  ctx.fillStyle="#777b7d";
-  if(count===0){
-    ctx.strokeStyle="#d6d6d6";
-    ctx.strokeRect(px+4,py+4,TILE-8,TILE-8);
-  }
-
-  // Intersection crosswalks and traffic signals
+  // Crosswalk stripes at four-way intersections
   if(count===4){
-    ctx.fillStyle="#e6e6e6";
+    ctx.fillStyle="#f1f1e9";
     for(let i=0;i<3;i++){
-      ctx.fillRect(px+7+i*6,py+5,3,5);
-      ctx.fillRect(px+7+i*6,py+TILE-10,3,5);
+      ctx.fillRect(px+7+i*6,py+7,3,5);
+      ctx.fillRect(px+7+i*6,py+TILE-12,3,5);
     }
     drawSignal(px+5,py+5,signalClock<7);
-    drawSignal(px+TILE-9,py+TILE-9,signalClock>=7);
+    drawSignal(px+TILE-10,py+TILE-10,signalClock>=7);
   }
 }
 
 function drawSignal(x,y,green){
   ctx.fillStyle="#1b2025";
-  ctx.fillRect(x,y,5,9);
+  ctx.fillRect(x,y,6,10);
   ctx.fillStyle=green?"#42e36c":"#ed4747";
   ctx.beginPath();
-  ctx.arc(x+2.5,y+4.5,1.8,0,Math.PI*2);
+  ctx.arc(x+3,y+5,2,0,Math.PI*2);
   ctx.fill();
 }
 
+/*
+ Find a road directly beside a building.
+ The building gets a small concrete entrance path leading toward it.
+*/
+function buildingEntrance(b){
+  for(let x=b.x;x<b.x+b.w;x++){
+    if(hasRoad(x,b.y-1))return{side:"top",x};
+    if(hasRoad(x,b.y+b.h))return{side:"bottom",x};
+  }
+  for(let y=b.y;y<b.y+b.h;y++){
+    if(hasRoad(b.x-1,y))return{side:"left",y};
+    if(hasRoad(b.x+b.w,y))return{side:"right",y};
+  }
+  return null;
+}
+
+function drawEntrance(b,px,py,w,h){
+  const entrance=buildingEntrance(b);
+  if(!entrance)return;
+
+  const cx=px+w/2,cy=py+h/2;
+  let sx=cx,sy=cy,ex=cx,ey=cy;
+
+  if(entrance.side==="top"){
+    sx=(entrance.x-b.x+0.5)*TILE+px;
+    sy=py;
+  }else if(entrance.side==="bottom"){
+    sx=(entrance.x-b.x+0.5)*TILE+px;
+    sy=py+h;
+  }else if(entrance.side==="left"){
+    sx=px;
+    sy=(entrance.y-b.y+0.5)*TILE+py;
+  }else{
+    sx=px+w;
+    sy=(entrance.y-b.y+0.5)*TILE+py;
+  }
+
+  ctx.strokeStyle="#c9c6b9";
+  ctx.lineWidth=7;
+  ctx.lineCap="square";
+  ctx.beginPath();
+  ctx.moveTo(sx,sy);
+  ctx.lineTo(cx,cy);
+  ctx.stroke();
+  ctx.lineCap="butt";
+
+  // Small dark entrance door
+  ctx.fillStyle="#514239";
+  ctx.fillRect(cx-4,cy-4,8,8);
+}
+
 function drawBuilding(b){
-  const px=b.x*TILE, py=b.y*TILE;
-  const w=b.w*TILE, h=b.h*TILE;
+  const px=b.x*TILE,py=b.y*TILE;
+  const w=b.w*TILE,h=b.h*TILE;
+
   ctx.fillStyle="#777b7b";
   ctx.fillRect(px+2,py+2,w-4,h-4);
-
   ctx.fillStyle=buildingInfo[b.type].color;
   ctx.fillRect(px+5,py+5,w-10,h-10);
-
   ctx.strokeStyle="#353a3e";
   ctx.lineWidth=2;
   ctx.strokeRect(px+5,py+5,w-10,h-10);
+
+  // Entrance walkway connects to the adjacent road sidewalk
+  drawEntrance(b,px+5,py+5,w-10,h-10);
 
   if(b.type==="house"){
     ctx.fillStyle="#874b36";
@@ -349,9 +381,10 @@ function drawBuilding(b){
     ctx.closePath();
     ctx.fill();
     ctx.fillStyle="#f4e3bf";
-    ctx.fillRect(px+12,py+16,8,10);
+    ctx.fillRect(px+7,py+16,7,8);
+    ctx.fillRect(px+19,py+16,7,8);
     ctx.fillStyle="#573c2d";
-    ctx.fillRect(px+22,py+20,6,12);
+    ctx.fillRect(px+13,py+24,7,8);
   }else if(b.type==="park"){
     ctx.fillStyle="#367b3c";
     for(let i=0;i<5;i++){
@@ -408,33 +441,52 @@ function drawBuilding(b){
   }
 }
 
+/*
+ Cars are drawn facing the direction of travel.
+ The windshield and headlights are at the FRONT of the car.
+*/
 function drawCar(car){
   const dx=car.dx||0,dy=car.dy||1;
   let x=car.x,y=car.y;
-  // Right-hand traffic lane offset
-  if(Math.abs(dy)>0){
-    x += dy>0?-5:5;
-  }else{
-    y += dx>0?5:-5;
-  }
+
+  // Keep vehicles on the right-hand side of American roads
+  if(dy!==0)x+=dy>0?-5:5;
+  else y+=dx>0?5:-5;
+
   ctx.save();
   ctx.translate(x,y);
   ctx.rotate(Math.atan2(dy,dx));
-  ctx.fillStyle=car.color;
-  ctx.fillRect(-8,-4,16,8);
-  ctx.fillStyle="#b8d8e8";
-  ctx.fillRect(-3,-3,6,6);
-  ctx.fillStyle="#20272d";
+
+  // Wheels
+  ctx.fillStyle="#171a1d";
   ctx.fillRect(-6,-5,4,2);
   ctx.fillRect(3,-5,4,2);
   ctx.fillRect(-6,3,4,2);
   ctx.fillRect(3,3,4,2);
+
+  // Vehicle body: front points toward positive X
+  ctx.fillStyle=car.color;
+  ctx.fillRect(-8,-4,16,8);
+
+  // Front hood and windshield
+  ctx.fillStyle="#9bc7dc";
+  ctx.fillRect(1,-3,4,6);
+
+  // Front headlights
+  ctx.fillStyle="#fff4bd";
+  ctx.fillRect(7,-3,2,2);
+  ctx.fillRect(7,1,2,2);
+
+  // Rear lights
+  ctx.fillStyle="#e84c45";
+  ctx.fillRect(-8,-3,2,2);
+  ctx.fillRect(-8,1,2,2);
+
   ctx.restore();
 }
 
 function draw(){
-  const width=area.clientWidth;
-  const height=area.clientHeight;
+  const width=area.clientWidth,height=area.clientHeight;
   ctx.clearRect(0,0,width,height);
   ctx.save();
   ctx.translate(cameraX,cameraY);
@@ -445,7 +497,7 @@ function draw(){
   const right=Math.min(WORLD_W,Math.ceil((width-cameraX)/(TILE*zoom))+1);
   const bottom=Math.min(WORLD_H,Math.ceil((height-cameraY)/(TILE*zoom))+1);
 
-  // Grass tiles
+  // Grass
   for(let y=top;y<bottom;y++){
     for(let x=left;x<right;x++){
       const px=x*TILE,py=y*TILE;
@@ -458,20 +510,19 @@ function draw(){
     }
   }
 
-  // Roads
+  // Roads and sidewalks
   for(let y=top;y<bottom;y++){
     for(let x=left;x<right;x++){
-      if(hasRoad(x,y)) drawRoad(x,y,x*TILE,y*TILE);
+      if(hasRoad(x,y))drawRoad(x,y,x*TILE,y*TILE);
     }
   }
 
-  // Buildings
-  for(const b of buildings) drawBuilding(b);
+  // Buildings and their entrance walkways
+  for(const b of buildings)drawBuilding(b);
 
-  // Cars
-  for(const car of cars) drawCar(car);
+  // Vehicles
+  for(const car of cars)drawCar(car);
 
-  // World boundary
   ctx.strokeStyle="#344b36";
   ctx.lineWidth=4;
   ctx.strokeRect(0,0,WORLD_W*TILE,WORLD_H*TILE);
@@ -491,8 +542,7 @@ function findPath(start,goal){
     const [x,y]=parseKey(current);
 
     for(const [dx,dy] of dirs){
-      const nx=x+dx,ny=y+dy;
-      const next=key(nx,ny);
+      const nx=x+dx,ny=y+dy,next=key(nx,ny);
       if(hasRoad(nx,ny)&&!cameFrom.has(next)){
         cameFrom.set(next,current);
         queue.push(next);
@@ -500,7 +550,7 @@ function findPath(start,goal){
     }
   }
 
-  if(!found) return null;
+  if(!found)return null;
   const path=[];
   let current=goal;
   while(current!==null){
@@ -512,15 +562,16 @@ function findPath(start,goal){
 
 function spawnCar(){
   const roadList=[...roads];
-  if(roadList.length<5) return;
+  if(roadList.length<5)return;
   const start=roadList[Math.floor(Math.random()*roadList.length)];
   const goal=roadList[Math.floor(Math.random()*roadList.length)];
-  if(start===goal) return;
+  if(start===goal)return;
   const path=findPath(start,goal);
-  if(!path||path.length<2) return;
+  if(!path||path.length<2)return;
 
   const colors=["#e7e7e7","#c84e45","#477db5","#252a30","#d4ad4b","#3b9c75"];
   const [x,y]=parseKey(path[0]);
+
   cars.push({
     path,index:0,progress:0,
     x:x*TILE+TILE/2,y:y*TILE+TILE/2,
@@ -540,17 +591,17 @@ function updateCars(dt){
 
     const current=parseKey(car.path[car.index]);
     const next=parseKey(car.path[car.index+1]);
-    const dx=next[0]-current[0];
-    const dy=next[1]-current[1];
+    const dx=next[0]-current[0],dy=next[1]-current[1];
 
-    // Traffic lights at four-way intersections.
+    // Stop before entering a red-light intersection
     if(isIntersection(next[0],next[1])){
       const vertical=dy!==0;
       const green=vertical?signalClock<7:signalClock>=7;
-      if(!green) continue;
+      if(!green)continue;
     }
 
-    car.dx=dx;car.dy=dy;
+    car.dx=dx;
+    car.dy=dy;
     car.progress+=car.speed*dt/TILE;
 
     while(car.progress>=1){
@@ -565,8 +616,12 @@ function updateCars(dt){
     if(car.index<car.path.length-1){
       const a=parseKey(car.path[car.index]);
       const b=parseKey(car.path[car.index+1]);
-      car.x=(a[0]+(b[0]-a[0])*car.progress)*TILE+TILE/2;
-      car.y=(a[1]+(b[1]-a[1])*car.progress)*TILE+TILE/2;
+      const ndx=b[0]-a[0],ndy=b[1]-a[1];
+
+      car.x=(a[0]+ndx*car.progress)*TILE+TILE/2;
+      car.y=(a[1]+ndy*car.progress)*TILE+TILE/2;
+      car.dx=ndx;
+      car.dy=ndy;
     }
   }
 }
@@ -579,7 +634,7 @@ function animate(time){
 
   if(spawnTimer>2.5){
     spawnTimer=0;
-    if(cars.length<12) spawnCar();
+    if(cars.length<12)spawnCar();
   }
 
   updateCars(dt);
@@ -596,12 +651,12 @@ document.querySelectorAll(".tool").forEach(button=>{
   });
 });
 
-// Pointer and camera controls
+// Mouse and touch camera controls
 canvas.addEventListener("pointerdown",e=>{
   canvas.setPointerCapture(e.pointerId);
   lastPointer={x:e.offsetX,y:e.offsetY};
-  dragMoved=false;
   dragging=selectedTool==="pan";
+
   if(!dragging){
     const tile=tileAt(e.offsetX,e.offsetY);
     placeTile(tile.x,tile.y);
@@ -610,12 +665,9 @@ canvas.addEventListener("pointerdown",e=>{
 });
 
 canvas.addEventListener("pointermove",e=>{
-  if(!dragging||!lastPointer) return;
-  const dx=e.offsetX-lastPointer.x;
-  const dy=e.offsetY-lastPointer.y;
-  if(Math.abs(dx)+Math.abs(dy)>1) dragMoved=true;
-  cameraX+=dx;
-  cameraY+=dy;
+  if(!dragging||!lastPointer)return;
+  cameraX+=e.offsetX-lastPointer.x;
+  cameraY+=e.offsetY-lastPointer.y;
   lastPointer={x:e.offsetX,y:e.offsetY};
   draw();
 });
@@ -681,7 +733,7 @@ function loadCity(){
     const raw=localStorage.getItem("americanCityBuilderSave");
     if(!raw){notify("No saved city found.");return;}
     const data=JSON.parse(raw);
-    if(!Array.isArray(data.roads)||!Array.isArray(data.buildings)) throw new Error();
+    if(!Array.isArray(data.roads)||!Array.isArray(data.buildings))throw new Error();
     money=Number(data.money)||0;
     roads=new Set(data.roads);
     buildings=data.buildings;
@@ -698,11 +750,16 @@ document.getElementById("save").onclick=saveCity;
 document.getElementById("load").onclick=loadCity;
 document.getElementById("newCity").onclick=()=>{
   if(!confirm("Start a new city? Unsaved progress will be lost."))return;
-  money=5000;roads=new Set();buildings=[];cars=[];
-  updateUI();draw();notify("New city started!");
+  money=5000;
+  roads=new Set();
+  buildings=[];
+  cars=[];
+  updateUI();
+  draw();
+  notify("New city started!");
 };
 
-// Start with a centered camera
+// Start game
 updateUI();
 resize();
 cameraX=area.clientWidth/2-(WORLD_W*TILE)/2;
