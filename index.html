@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>My City Builder</title>
+
 <style>
 * { box-sizing: border-box; }
 
@@ -28,7 +29,7 @@ h1 { margin: 0; font-size: 22px; }
 
 .stats {
   display: flex;
-  gap: 18px;
+  gap: 16px;
   font-weight: bold;
   color: #8de6a0;
 }
@@ -39,7 +40,7 @@ main {
   padding: 10px;
 }
 
-.toolbar {
+.toolbar, .camera-tools {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -67,25 +68,36 @@ button.active {
   background: #17212b;
   padding: 10px;
   border-radius: 10px;
+  overflow: hidden;
 }
 
 canvas {
   display: block;
   width: 100%;
   height: auto;
+  border-radius: 5px;
   cursor: crosshair;
-  image-rendering: pixelated;
+  touch-action: none;
 }
 
 .info {
   color: #bdc9d5;
   margin-top: 12px;
   font-size: 14px;
+  line-height: 1.6;
+}
+
+.camera-label {
+  color: #9fb2c5;
+  font-size: 13px;
+  margin-left: auto;
+  align-self: center;
 }
 
 @media(max-width:600px) {
   .stats { font-size: 13px; gap: 9px; }
   button { padding: 9px; }
+  h1 { font-size: 19px; }
 }
 </style>
 </head>
@@ -94,9 +106,11 @@ canvas {
 
 <header>
   <h1>🏙️ My City Builder</h1>
+
   <div class="stats">
     <span>💰 $<span id="money">1000</span></span>
-    <span>🏠 <span id="buildings">0</span> Buildings</span>
+    <span>🏠 <span id="buildings">0</span></span>
+    <span>🔍 <span id="zoomText">100%</span></span>
   </div>
 </header>
 
@@ -108,6 +122,14 @@ canvas {
     <button data-tool="shop">🏪 Shop ($150)</button>
     <button data-tool="park">🌳 Park ($50)</button>
     <button data-tool="demolish">🗑️ Demolish</button>
+    <button data-tool="pan">✋ Move Camera</button>
+  </div>
+
+  <div class="camera-tools">
+    <button id="zoomOut">➖ Zoom Out</button>
+    <button id="zoomIn">➕ Zoom In</button>
+    <button id="resetView">🎯 Reset View</button>
+    <span class="camera-label" id="position">Map: 50, 50</span>
   </div>
 
   <div class="game-container">
@@ -115,8 +137,11 @@ canvas {
   </div>
 
   <div class="info">
-    Select a building above and click an empty tile to construct it.
-    Build roads, houses, shops and parks to create your city!
+    <b>Building:</b> Select a building and click an empty tile.<br>
+    <b>Zoom:</b> Use your mouse wheel or zoom buttons.<br>
+    <b>Move:</b> Select Move Camera and drag the map.<br>
+    <b>Keyboard:</b> Use arrow keys to move the camera and + / - to zoom.<br>
+    <b>World:</b> 100 × 100 tiles.
   </div>
 
 </main>
@@ -126,11 +151,33 @@ const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
 const TILE = 32;
-const COLS = 30;
-const ROWS = 20;
+const COLS = 100;
+const ROWS = 100;
+
+const WORLD_WIDTH = COLS * TILE;
+const WORLD_HEIGHT = ROWS * TILE;
 
 let money = 1000;
 let selectedTool = "road";
+
+let zoom = 1;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 2.5;
+
+let cameraX = WORLD_WIDTH / 2 - canvas.width / 2;
+let cameraY = WORLD_HEIGHT / 2 - canvas.height / 2;
+
+let mouse = {x: 0, y: 0};
+
+let dragging = false;
+let dragMoved = false;
+let dragStart = {x: 0, y: 0};
+let lastPointer = {x: 0, y: 0};
+
+let world = Array.from(
+  {length: ROWS},
+  () => Array(COLS).fill(null)
+);
 
 const prices = {
   road: 10,
@@ -139,39 +186,73 @@ const prices = {
   park: 50
 };
 
-const world = Array.from(
-  {length: ROWS},
-  () => Array(COLS).fill(null)
-);
+function clampCamera() {
+  const viewWidth = canvas.width / zoom;
+  const viewHeight = canvas.height / zoom;
 
-const colors = {
-  grass: "#79ad59",
-  road: "#686d73",
-  house: "#e5c49a",
-  shop: "#e5a34f",
-  park: "#3e9d58"
-};
+  cameraX = Math.max(
+    0,
+    Math.min(WORLD_WIDTH - viewWidth, cameraX)
+  );
 
-function drawGrass(x, y) {
-  ctx.fillStyle = colors.grass;
+  cameraY = Math.max(
+    0,
+    Math.min(WORLD_HEIGHT - viewHeight, cameraY)
+  );
+}
+
+function getMousePosition(event) {
+  const rect = canvas.getBoundingClientRect();
+
+  return {
+    x: (event.clientX - rect.left) * canvas.width / rect.width,
+    y: (event.clientY - rect.top) * canvas.height / rect.height
+  };
+}
+
+function screenToWorld(x, y) {
+  return {
+    x: cameraX + x / zoom,
+    y: cameraY + y / zoom
+  };
+}
+
+function randomDetail(x, y) {
+  const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+function drawGrass(x, y, col, row) {
+  ctx.fillStyle = "#79ad59";
   ctx.fillRect(x, y, TILE, TILE);
 
-  ctx.fillStyle = "#8cbd68";
-  ctx.fillRect(x + 5, y + 7, 3, 3);
-  ctx.fillRect(x + 23, y + 22, 3, 3);
+  const detail = randomDetail(col, row);
+
+  if (detail > 0.65) {
+    ctx.fillStyle = "#8cbd68";
+    ctx.fillRect(x + 5, y + 7, 3, 3);
+    ctx.fillRect(x + 23, y + 22, 3, 3);
+  }
+
+  if (detail < 0.12) {
+    ctx.fillStyle = "#6e9e4e";
+    ctx.fillRect(x + 14, y + 5, 3, 3);
+  }
 }
 
 function drawRoad(x, y) {
-  ctx.fillStyle = colors.road;
+  ctx.fillStyle = "#686d73";
   ctx.fillRect(x, y, TILE, TILE);
 
   ctx.strokeStyle = "#d9d4a1";
   ctx.lineWidth = 2;
   ctx.setLineDash([5, 5]);
+
   ctx.beginPath();
   ctx.moveTo(x + 16, y);
   ctx.lineTo(x + 16, y + TILE);
   ctx.stroke();
+
   ctx.setLineDash([]);
 }
 
@@ -179,7 +260,7 @@ function drawHouse(x, y) {
   ctx.fillStyle = "#8e573b";
   ctx.fillRect(x + 4, y + 11, 24, 18);
 
-  ctx.fillStyle = colors.house;
+  ctx.fillStyle = "#e5c49a";
   ctx.fillRect(x + 6, y + 13, 20, 16);
 
   ctx.fillStyle = "#a84b3f";
@@ -201,7 +282,7 @@ function drawShop(x, y) {
   ctx.fillStyle = "#f1d2a0";
   ctx.fillRect(x + 3, y + 10, 26, 19);
 
-  ctx.fillStyle = colors.shop;
+  ctx.fillStyle = "#e5a34f";
   ctx.fillRect(x + 3, y + 5, 26, 8);
 
   ctx.fillStyle = "#ffffff";
@@ -231,8 +312,6 @@ function drawPark(x, y) {
 }
 
 function drawTile(x, y, type) {
-  if (!type) return;
-
   if (type === "road") drawRoad(x, y);
   if (type === "house") drawHouse(x, y);
   if (type === "shop") drawShop(x, y);
@@ -242,18 +321,43 @@ function drawTile(x, y, type) {
 function drawWorld() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  for (let row = 0; row < ROWS; row++) {
-    for (let col = 0; col < COLS; col++) {
+  ctx.save();
+
+  // Camera transformation
+  ctx.scale(zoom, zoom);
+  ctx.translate(-cameraX, -cameraY);
+
+  // Only draw tiles visible on the screen
+  const startCol = Math.max(0, Math.floor(cameraX / TILE));
+  const startRow = Math.max(0, Math.floor(cameraY / TILE));
+
+  const endCol = Math.min(
+    COLS,
+    Math.ceil((cameraX + canvas.width / zoom) / TILE)
+  );
+
+  const endRow = Math.min(
+    ROWS,
+    Math.ceil((cameraY + canvas.height / zoom) / TILE)
+  );
+
+  for (let row = startRow; row < endRow; row++) {
+    for (let col = startCol; col < endCol; col++) {
       const x = col * TILE;
       const y = row * TILE;
 
-      drawGrass(x, y);
+      drawGrass(x, y, col, row);
       drawTile(x, y, world[row][col]);
 
       ctx.strokeStyle = "rgba(0,0,0,0.12)";
+      ctx.lineWidth = 1 / zoom;
       ctx.strokeRect(x, y, TILE, TILE);
     }
   }
+
+  ctx.restore();
+
+  updateCameraInfo();
 }
 
 function updateStats() {
@@ -270,6 +374,46 @@ function updateStats() {
   document.getElementById("buildings").textContent = count;
 }
 
+function updateCameraInfo() {
+  document.getElementById("zoomText").textContent =
+    Math.round(zoom * 100) + "%";
+
+  const centerX = Math.floor(
+    (cameraX + canvas.width / zoom / 2) / TILE
+  );
+
+  const centerY = Math.floor(
+    (cameraY + canvas.height / zoom / 2) / TILE
+  );
+
+  document.getElementById("position").textContent =
+    "Map: " + centerX + ", " + centerY;
+}
+
+function setZoom(newZoom, screenX = canvas.width / 2,
+                 screenY = canvas.height / 2) {
+
+  const before = screenToWorld(screenX, screenY);
+
+  zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+
+  cameraX = before.x - screenX / zoom;
+  cameraY = before.y - screenY / zoom;
+
+  clampCamera();
+  drawWorld();
+}
+
+function resetCamera() {
+  zoom = 1;
+  cameraX = WORLD_WIDTH / 2 - canvas.width / 2;
+  cameraY = WORLD_HEIGHT / 2 - canvas.height / 2;
+
+  clampCamera();
+  drawWorld();
+}
+
+// Building selection
 document.querySelectorAll("[data-tool]").forEach(button => {
   button.addEventListener("click", () => {
     selectedTool = button.dataset.tool;
@@ -279,24 +423,115 @@ document.querySelectorAll("[data-tool]").forEach(button => {
     });
 
     button.classList.add("active");
+
+    canvas.style.cursor =
+      selectedTool === "pan" ? "grab" : "crosshair";
   });
 });
 
-canvas.addEventListener("click", event => {
-  const rect = canvas.getBoundingClientRect();
+// Zoom controls
+document.getElementById("zoomIn").addEventListener("click", () => {
+  setZoom(zoom * 1.25);
+});
 
-  const x = Math.floor(
-    (event.clientX - rect.left) * canvas.width / rect.width
+document.getElementById("zoomOut").addEventListener("click", () => {
+  setZoom(zoom / 1.25);
+});
+
+document.getElementById("resetView").addEventListener("click", resetCamera);
+
+// Mouse wheel zoom
+canvas.addEventListener("wheel", event => {
+  event.preventDefault();
+
+  const pos = getMousePosition(event);
+
+  setZoom(
+    zoom * (event.deltaY < 0 ? 1.15 : 1 / 1.15),
+    pos.x,
+    pos.y
   );
+}, {passive: false});
 
-  const y = Math.floor(
-    (event.clientY - rect.top) * canvas.height / rect.height
-  );
+// Pointer controls
+canvas.addEventListener("contextmenu", event => {
+  event.preventDefault();
+});
 
-  const col = Math.floor(x / TILE);
-  const row = Math.floor(y / TILE);
+canvas.addEventListener("pointerdown", event => {
+  const pos = getMousePosition(event);
 
-  if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
+  const wantsPan =
+    selectedTool === "pan" ||
+    event.button === 1 ||
+    event.button === 2;
+
+  if (wantsPan) {
+    dragging = true;
+    dragMoved = false;
+    dragStart = pos;
+    lastPointer = pos;
+
+    canvas.setPointerCapture(event.pointerId);
+    canvas.style.cursor = "grabbing";
+    event.preventDefault();
+    return;
+  }
+
+  if (event.button !== 0) return;
+
+  // Build on pointer release to avoid building while dragging
+  dragging = false;
+  dragStart = pos;
+  lastPointer = pos;
+  dragMoved = false;
+
+  canvas.setPointerCapture(event.pointerId);
+});
+
+canvas.addEventListener("pointermove", event => {
+  const pos = getMousePosition(event);
+  mouse = pos;
+
+  if (!canvas.hasPointerCapture(event.pointerId)) return;
+
+  const wantsPan =
+    selectedTool === "pan" ||
+    event.buttons === 4 ||
+    event.buttons === 2;
+
+  if (dragging) {
+    const dx = pos.x - lastPointer.x;
+    const dy = pos.y - lastPointer.y;
+
+    if (Math.abs(pos.x - dragStart.x) +
+        Math.abs(pos.y - dragStart.y) > 3) {
+      dragMoved = true;
+    }
+
+    cameraX -= dx / zoom;
+    cameraY -= dy / zoom;
+
+    lastPointer = pos;
+
+    clampCamera();
+    drawWorld();
+    return;
+  }
+
+  if (selectedTool === "pan" && wantsPan) {
+    dragging = true;
+  }
+});
+
+function placeTile(pos) {
+  const point = screenToWorld(pos.x, pos.y);
+
+  const col = Math.floor(point.x / TILE);
+  const row = Math.floor(point.y / TILE);
+
+  if (col < 0 || col >= COLS ||
+      row < 0 || row >= ROWS) return;
 
   const existing = world[row][col];
 
@@ -305,7 +540,7 @@ canvas.addEventListener("click", event => {
       money += Math.floor((prices[existing] || 0) / 2);
       world[row][col] = null;
     }
-  } else {
+  } else if (selectedTool !== "pan") {
     if (existing) return;
 
     const price = prices[selectedTool];
@@ -321,11 +556,76 @@ canvas.addEventListener("click", event => {
 
   drawWorld();
   updateStats();
+}
+
+canvas.addEventListener("pointerup", event => {
+  if (dragging) {
+    dragging = false;
+    canvas.style.cursor =
+      selectedTool === "pan" ? "grab" : "crosshair";
+    return;
+  }
+
+  if (!dragMoved && event.button === 0) {
+    const pos = getMousePosition(event);
+    placeTile(pos);
+  }
 });
 
+canvas.addEventListener("pointercancel", () => {
+  dragging = false;
+  dragMoved = false;
+  canvas.style.cursor =
+    selectedTool === "pan" ? "grab" : "crosshair";
+});
+
+// Keyboard controls
+window.addEventListener("keydown", event => {
+  if (event.target.tagName === "INPUT") return;
+
+  const amount = 60 / zoom;
+  let changed = false;
+
+  if (event.key === "ArrowUp") {
+    cameraY -= amount;
+    changed = true;
+  }
+
+  if (event.key === "ArrowDown") {
+    cameraY += amount;
+    changed = true;
+  }
+
+  if (event.key === "ArrowLeft") {
+    cameraX -= amount;
+    changed = true;
+  }
+
+  if (event.key === "ArrowRight") {
+    cameraX += amount;
+    changed = true;
+  }
+
+  if (event.key === "+" || event.key === "=") {
+    setZoom(zoom * 1.2);
+  }
+
+  if (event.key === "-") {
+    setZoom(zoom / 1.2);
+  }
+
+  if (changed) {
+    event.preventDefault();
+    clampCamera();
+    drawWorld();
+  }
+});
+
+// Start game
+clampCamera();
 drawWorld();
 updateStats();
-</script>
 
+</script>
 </body>
 </html>
