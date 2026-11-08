@@ -89,7 +89,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 <div id="gameArea">
   <canvas id="game"></canvas>
   <div id="toast"></div>
-  <div id="help">Roads have connected sidewalks. Buildings face their nearest road and get an entrance walkway.</div>
+  <div id="help">Cars now turn smoothly. Buildings face their nearest road and have connected walkways.</div>
 </div>
 </main>
 
@@ -249,25 +249,22 @@ function isIntersection(x,y){
   return hasRoad(x,y)&&connectionCount(neighbors(x,y))===4;
 }
 
-/* Draw the road surface and only the exposed sidewalk edges. */
+/* Draw roads and exposed sidewalk edges. */
 function drawRoad(x,y,px,py){
   const n=neighbors(x,y);
   const count=connectionCount(n);
   const cx=px+TILE/2;
   const cy=py+TILE/2;
 
-  // Asphalt surface
   ctx.fillStyle="#454a50";
   ctx.fillRect(px,py,TILE,TILE);
 
-  // Sidewalks appear only on the outside edges of the road network
   ctx.fillStyle="#bdbbb1";
   if(!n.n)ctx.fillRect(px,py,TILE,SIDEWALK);
   if(!n.s)ctx.fillRect(px,py+TILE-SIDEWALK,TILE,SIDEWALK);
   if(!n.w)ctx.fillRect(px,py,SIDEWALK,TILE);
   if(!n.e)ctx.fillRect(px+TILE-SIDEWALK,py,SIDEWALK,TILE);
 
-  // Curb lines
   ctx.strokeStyle="#e3e0d5";
   ctx.lineWidth=1;
   ctx.beginPath();
@@ -277,7 +274,6 @@ function drawRoad(x,y,px,py){
   if(!n.e){ctx.moveTo(px+TILE-SIDEWALK,py);ctx.lineTo(px+TILE-SIDEWALK,py+TILE);}
   ctx.stroke();
 
-  // Yellow road center lines
   ctx.strokeStyle="#f4d35e";
   ctx.lineWidth=1.5;
   ctx.setLineDash([5,5]);
@@ -289,7 +285,6 @@ function drawRoad(x,y,px,py){
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Intersection crosswalks and traffic lights
   if(count===4){
     ctx.fillStyle="#f1f1e9";
     for(let i=0;i<3;i++){
@@ -310,10 +305,6 @@ function drawSignal(x,y,green){
   ctx.fill();
 }
 
-/*
- Find the closest road to any side of a building.
- The returned side tells us which way the building entrance should face.
-*/
 function findBuildingEntrance(b){
   const left=b.x*TILE;
   const top=b.y*TILE;
@@ -334,7 +325,6 @@ function findBuildingEntrance(b){
 
     let side,gap,doorX,doorY,targetX,targetY;
 
-    // Road is above the building
     if(roadBottom<=top){
       gap=top-roadBottom;
       side="top";
@@ -342,42 +332,33 @@ function findBuildingEntrance(b){
       doorY=top;
       targetX=Math.max(roadLeft+SIDEWALK,Math.min(centerX,roadRight-SIDEWALK));
       targetY=roadBottom-SIDEWALK/2;
-    }
-    // Road is below the building
-    else if(roadTop>=bottom){
+    }else if(roadTop>=bottom){
       gap=roadTop-bottom;
       side="bottom";
       doorX=centerX;
       doorY=bottom;
       targetX=Math.max(roadLeft+SIDEWALK,Math.min(centerX,roadRight-SIDEWALK));
       targetY=roadTop+SIDEWALK/2;
-    }
-    // Road is left of the building
-    else if(roadRight<=left){
+    }else if(roadRight<=left){
       gap=left-roadRight;
       side="left";
       doorX=left;
       doorY=centerY;
       targetX=roadRight-SIDEWALK/2;
       targetY=Math.max(roadTop+SIDEWALK,Math.min(centerY,roadBottom-SIDEWALK));
-    }
-    // Road is right of the building
-    else if(roadLeft>=right){
+    }else if(roadLeft>=right){
       gap=roadLeft-right;
       side="right";
       doorX=right;
       doorY=centerY;
       targetX=roadLeft+SIDEWALK/2;
       targetY=Math.max(roadTop+SIDEWALK,Math.min(centerY,roadBottom-SIDEWALK));
-    }
-    else{
+    }else{
       continue;
     }
 
-    // Ignore roads that are too far away
     if(gap>MAX_ENTRANCE_DISTANCE*TILE)continue;
 
-    // Prefer roads that are close and directly aligned with the building
     const distance=gap+Math.abs(
       side==="top"||side==="bottom"
         ?centerX-(roadLeft+TILE/2)
@@ -393,7 +374,6 @@ function findBuildingEntrance(b){
   return best;
 }
 
-/* Draw the pedestrian path before drawing the building itself. */
 function drawBuildingWalkway(b){
   const entrance=findBuildingEntrance(b);
   if(!entrance)return;
@@ -401,14 +381,11 @@ function drawBuildingWalkway(b){
   const {doorX,doorY,targetX,targetY}=entrance;
 
   ctx.lineCap="square";
-
-  // Main concrete path
   ctx.strokeStyle="#bdbbb1";
   ctx.lineWidth=7;
   ctx.beginPath();
   ctx.moveTo(doorX,doorY);
 
-  // Use a right-angle path instead of a diagonal shortcut
   if(entrance.side==="top"||entrance.side==="bottom"){
     ctx.lineTo(doorX,targetY);
     ctx.lineTo(targetX,targetY);
@@ -418,7 +395,6 @@ function drawBuildingWalkway(b){
   }
   ctx.stroke();
 
-  // Lighter path edge
   ctx.strokeStyle="#d8d5ca";
   ctx.lineWidth=1;
   ctx.beginPath();
@@ -441,7 +417,6 @@ function drawBuilding(b){
   const w=b.w*TILE;
   const h=b.h*TILE;
 
-  // Building base
   ctx.fillStyle="#777b7b";
   ctx.fillRect(px+2,py+2,w-4,h-4);
   ctx.fillStyle=buildingInfo[b.type].color;
@@ -450,7 +425,6 @@ function drawBuilding(b){
   ctx.lineWidth=2;
   ctx.strokeRect(px+5,py+5,w-10,h-10);
 
-  // Building details
   if(b.type==="house"){
     ctx.fillStyle="#874b36";
     ctx.beginPath();
@@ -520,7 +494,6 @@ function drawBuilding(b){
     }
   }
 
-  // Entrance door faces the nearest road
   drawBuildingDoor(b,px,py,w,h);
 }
 
@@ -542,47 +515,30 @@ function drawBuildingDoor(b,px,py,w,h){
   }
 }
 
-/* Vehicles */
+/* Vehicle drawing: the front of each car points along its angle. */
 function drawCar(car){
-  const dx=car.dx||0;
-  const dy=car.dy||1;
-
-  let x=car.x;
-  let y=car.y;
-
-  // American right-hand traffic lane offset
-  if(dy!==0)x+=dy>0?-5:5;
-  else y+=dx>0?5:-5;
-
   ctx.save();
-  ctx.translate(x,y);
+  ctx.translate(car.x,car.y);
+  ctx.rotate(car.angle??Math.atan2(car.dy||1,car.dx||0));
 
-  // The front of the vehicle always points along its direction
-  ctx.rotate(Math.atan2(dy,dx));
-
-  // Wheels
   ctx.fillStyle="#171a1d";
   ctx.fillRect(-7,-5,4,2);
   ctx.fillRect(3,-5,4,2);
   ctx.fillRect(-7,3,4,2);
   ctx.fillRect(3,3,4,2);
 
-  // Body
   ctx.fillStyle=car.color;
   ctx.beginPath();
   ctx.roundRect(-9,-5,18,10,3);
   ctx.fill();
 
-  // Windshield at front
   ctx.fillStyle="#9bc7dc";
   ctx.fillRect(2,-3,4,6);
 
-  // Headlights
   ctx.fillStyle="#fff4bd";
   ctx.fillRect(8,-4,2,3);
   ctx.fillRect(8,1,2,3);
 
-  // Rear lights
   ctx.fillStyle="#e84c45";
   ctx.fillRect(-9,-4,2,3);
   ctx.fillRect(-9,1,2,3);
@@ -604,7 +560,6 @@ function draw(){
   const right=Math.min(WORLD_W,Math.ceil((width-cameraX)/(TILE*zoom))+1);
   const bottom=Math.min(WORLD_H,Math.ceil((height-cameraY)/(TILE*zoom))+1);
 
-  // Grass
   for(let y=top;y<bottom;y++){
     for(let x=left;x<right;x++){
       const px=x*TILE;
@@ -619,20 +574,14 @@ function draw(){
     }
   }
 
-  // Roads and connected sidewalks
   for(let y=top;y<bottom;y++){
     for(let x=left;x<right;x++){
       if(hasRoad(x,y))drawRoad(x,y,x*TILE,y*TILE);
     }
   }
 
-  // Pedestrian paths first, so buildings sit on top of them
   for(const b of buildings)drawBuildingWalkway(b);
-
-  // Buildings and entrance doors
   for(const b of buildings)drawBuilding(b);
-
-  // Cars
   for(const car of cars)drawCar(car);
 
   ctx.strokeStyle="#344b36";
@@ -641,7 +590,7 @@ function draw(){
   ctx.restore();
 }
 
-/* Basic road route finding */
+/* Find a connected road route using breadth-first search. */
 function findPath(start,goal){
   const queue=[start];
   const cameFrom=new Map();
@@ -694,18 +643,39 @@ function spawnCar(){
 
   const colors=["#e7e7e7","#c84e45","#477db5","#252a30","#d4ad4b","#3b9c75"];
   const [x,y]=parseKey(path[0]);
+  const [nx,ny]=parseKey(path[1]);
+  const dx=nx-x;
+  const dy=ny-y;
 
   cars.push({
-    path,index:0,progress:0,
+    path,
+    index:0,
+    progress:0,
     x:x*TILE+TILE/2,
     y:y*TILE+TILE/2,
-    dx:0,dy:1,
+    dx,dy,
+    angle:Math.atan2(dy,dx),
     speed:34+Math.random()*18,
     color:colors[Math.floor(Math.random()*colors.length)]
   });
 }
 
+/* Smooth vehicle movement, lane changes and corner rotation. */
 function updateCars(dt){
+  const laneOffset=(dx,dy)=>{
+    if(dy!==0)return {x:dy>0?-5:5,y:0};
+    return {x:0,y:dx>0?5:-5};
+  };
+
+  const lerp=(a,b,t)=>a+(b-a)*t;
+
+  const lerpAngle=(a,b,t)=>{
+    let difference=b-a;
+    while(difference>Math.PI)difference-=Math.PI*2;
+    while(difference< -Math.PI)difference+=Math.PI*2;
+    return a+difference*t;
+  };
+
   for(let i=cars.length-1;i>=0;i--){
     const car=cars[i];
 
@@ -716,10 +686,11 @@ function updateCars(dt){
 
     const current=parseKey(car.path[car.index]);
     const next=parseKey(car.path[car.index+1]);
+
     const dx=next[0]-current[0];
     const dy=next[1]-current[1];
 
-    // Stop before entering a red-light intersection
+    // Stop before entering a red-light intersection.
     if(isIntersection(next[0],next[1])){
       const vertical=dy!==0;
       const green=vertical?signalClock<7:signalClock>=7;
@@ -733,23 +704,53 @@ function updateCars(dt){
       car.index++;
 
       if(car.index>=car.path.length-1){
-        car.progress=0;
+        cars.splice(i,1);
         break;
       }
     }
 
-    if(car.index<car.path.length-1){
-      const a=parseKey(car.path[car.index]);
-      const b=parseKey(car.path[car.index+1]);
+    if(cars[i]!==car)continue;
 
-      const ndx=b[0]-a[0];
-      const ndy=b[1]-a[1];
+    const a=parseKey(car.path[car.index]);
+    const b=parseKey(car.path[car.index+1]);
 
-      car.x=(a[0]+ndx*car.progress)*TILE+TILE/2;
-      car.y=(a[1]+ndy*car.progress)*TILE+TILE/2;
-      car.dx=ndx;
-      car.dy=ndy;
+    const moveX=b[0]-a[0];
+    const moveY=b[1]-a[1];
+
+    const startOffset=laneOffset(moveX,moveY);
+
+    let endOffset=startOffset;
+    const currentAngle=Math.atan2(moveY,moveX);
+    let nextAngle=currentAngle;
+
+    if(car.index+2<car.path.length){
+      const c=parseKey(car.path[car.index+2]);
+      const nextDX=c[0]-b[0];
+      const nextDY=c[1]-b[1];
+
+      endOffset=laneOffset(nextDX,nextDY);
+      nextAngle=Math.atan2(nextDY,nextDX);
     }
+
+    // Begin preparing for the next turn near the end of this road tile.
+    const turnStart=0.65;
+    const turnProgress=Math.max(
+      0,
+      Math.min(1,(car.progress-turnStart)/(1-turnStart))
+    );
+
+    const smoothTurn=turnProgress*turnProgress*(3-2*turnProgress);
+
+    const offsetX=lerp(startOffset.x,endOffset.x,smoothTurn);
+    const offsetY=lerp(startOffset.y,endOffset.y,smoothTurn);
+
+    car.x=(a[0]+moveX*car.progress)*TILE+TILE/2+offsetX;
+    car.y=(a[1]+moveY*car.progress)*TILE+TILE/2+offsetY;
+
+    car.angle=lerpAngle(currentAngle,nextAngle,smoothTurn);
+
+    car.dx=moveX;
+    car.dy=moveY;
   }
 }
 
@@ -770,7 +771,7 @@ function animate(time){
   requestAnimationFrame(animate);
 }
 
-// Tool selection
+/* Tool selection */
 document.querySelectorAll(".tool").forEach(button=>{
   button.addEventListener("click",()=>{
     selectedTool=button.dataset.tool;
@@ -779,7 +780,7 @@ document.querySelectorAll(".tool").forEach(button=>{
   });
 });
 
-// Mouse and touch controls
+/* Mouse and touch controls */
 canvas.addEventListener("pointerdown",e=>{
   canvas.setPointerCapture(e.pointerId);
   lastPointer={x:e.offsetX,y:e.offsetY};
@@ -806,6 +807,7 @@ function endPointer(){
   dragging=false;
   lastPointer=null;
 }
+
 canvas.addEventListener("pointerup",endPointer);
 canvas.addEventListener("pointercancel",endPointer);
 
@@ -857,7 +859,7 @@ window.addEventListener("keydown",e=>{
   draw();
 });
 
-// Save and load
+/* Save and load */
 function saveCity(){
   const data={money,roads:[...roads],buildings};
 
@@ -908,7 +910,7 @@ document.getElementById("newCity").onclick=()=>{
   notify("New city started!");
 };
 
-// Start
+/* Start the game */
 updateUI();
 resize();
 
