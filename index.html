@@ -23,7 +23,7 @@ aside{width:190px;flex-shrink:0;background:#202d3b;padding:12px;overflow-y:auto;
 #gameArea{flex:1;min-width:0;position:relative;background:#567d49;overflow:hidden}
 canvas{display:block;width:100%;height:100%;touch-action:none}
 #help{position:absolute;bottom:10px;left:10px;background:#17202bdc;padding:8px 11px;border-radius:6px;color:#d9e3ec;font-size:12px;pointer-events:none}
-#toast{position:absolute;top:12px;left:50%;transform:translateX(-50%);background:#17202beF;padding:9px 15px;border-radius:7px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+#toast{position:absolute;top:12px;left:50%;transform:translateX(-50%);background:#17202bef;padding:9px 15px;border-radius:7px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
 #toast.show{opacity:1}
 @media(max-width:650px){
  header{height:70px;align-items:flex-start;padding-top:8px;flex-direction:column;gap:5px}
@@ -89,7 +89,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 <div id="gameArea">
   <canvas id="game"></canvas>
   <div id="toast"></div>
-  <div id="help">Place roads and buildings. Buildings placed beside roads get an entrance walkway. Select Move Camera to drag the map. Scroll to zoom.</div>
+  <div id="help">Roads have connected sidewalks. Buildings face their nearest road and get an entrance walkway.</div>
 </div>
 </main>
 
@@ -106,6 +106,8 @@ const carLabel=document.getElementById("carCount");
 const toast=document.getElementById("toast");
 
 const TILE=32,WORLD_W=100,WORLD_H=100;
+const SIDEWALK=6;
+const MAX_ENTRANCE_DISTANCE=8;
 
 let money=5000;
 let selectedTool="road";
@@ -247,45 +249,47 @@ function isIntersection(x,y){
   return hasRoad(x,y)&&connectionCount(neighbors(x,y))===4;
 }
 
-/* Sidewalks are drawn along the exposed edges of the road network. */
+/* Draw the road surface and only the exposed sidewalk edges. */
 function drawRoad(x,y,px,py){
   const n=neighbors(x,y);
   const count=connectionCount(n);
-  const cx=px+TILE/2,cy=py+TILE/2;
+  const cx=px+TILE/2;
+  const cy=py+TILE/2;
 
+  // Asphalt surface
   ctx.fillStyle="#454a50";
   ctx.fillRect(px,py,TILE,TILE);
 
-  // Sidewalks on the outside edges of the road network
-  ctx.fillStyle="#b9b8ae";
-  if(!n.n)ctx.fillRect(px,py,TILE,6);
-  if(!n.s)ctx.fillRect(px,py+TILE-6,TILE,6);
-  if(!n.w)ctx.fillRect(px,py,6,TILE);
-  if(!n.e)ctx.fillRect(px+TILE-6,py,6,TILE);
+  // Sidewalks appear only on the outside edges of the road network
+  ctx.fillStyle="#bdbbb1";
+  if(!n.n)ctx.fillRect(px,py,TILE,SIDEWALK);
+  if(!n.s)ctx.fillRect(px,py+TILE-SIDEWALK,TILE,SIDEWALK);
+  if(!n.w)ctx.fillRect(px,py,SIDEWALK,TILE);
+  if(!n.e)ctx.fillRect(px+TILE-SIDEWALK,py,SIDEWALK,TILE);
 
-  // Curb edges
-  ctx.strokeStyle="#e0ded4";
+  // Curb lines
+  ctx.strokeStyle="#e3e0d5";
   ctx.lineWidth=1;
   ctx.beginPath();
-  if(!n.n){ctx.moveTo(px,py+6);ctx.lineTo(px+TILE,py+6);}
-  if(!n.s){ctx.moveTo(px,py+TILE-6);ctx.lineTo(px+TILE,py+TILE-6);}
-  if(!n.w){ctx.moveTo(px+6,py);ctx.lineTo(px+6,py+TILE);}
-  if(!n.e){ctx.moveTo(px+TILE-6,py);ctx.lineTo(px+TILE-6,py+TILE);}
+  if(!n.n){ctx.moveTo(px,py+SIDEWALK);ctx.lineTo(px+TILE,py+SIDEWALK);}
+  if(!n.s){ctx.moveTo(px,py+TILE-SIDEWALK);ctx.lineTo(px+TILE,py+TILE-SIDEWALK);}
+  if(!n.w){ctx.moveTo(px+SIDEWALK,py);ctx.lineTo(px+SIDEWALK,py+TILE);}
+  if(!n.e){ctx.moveTo(px+TILE-SIDEWALK,py);ctx.lineTo(px+TILE-SIDEWALK,py+TILE);}
   ctx.stroke();
 
-  // Yellow center markings
+  // Yellow road center lines
   ctx.strokeStyle="#f4d35e";
   ctx.lineWidth=1.5;
   ctx.setLineDash([5,5]);
   ctx.beginPath();
-  if(n.n){ctx.moveTo(cx,cy);ctx.lineTo(cx,py+6);}
-  if(n.s){ctx.moveTo(cx,cy);ctx.lineTo(cx,py+TILE-6);}
-  if(n.e){ctx.moveTo(cx,cy);ctx.lineTo(px+TILE-6,cy);}
-  if(n.w){ctx.moveTo(cx,cy);ctx.lineTo(px+6,cy);}
+  if(n.n){ctx.moveTo(cx,cy);ctx.lineTo(cx,py+SIDEWALK);}
+  if(n.s){ctx.moveTo(cx,cy);ctx.lineTo(cx,py+TILE-SIDEWALK);}
+  if(n.e){ctx.moveTo(cx,cy);ctx.lineTo(px+TILE-SIDEWALK,cy);}
+  if(n.w){ctx.moveTo(cx,cy);ctx.lineTo(px+SIDEWALK,cy);}
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Crosswalk stripes at four-way intersections
+  // Intersection crosswalks and traffic lights
   if(count===4){
     ctx.fillStyle="#f1f1e9";
     for(let i=0;i<3;i++){
@@ -307,60 +311,137 @@ function drawSignal(x,y,green){
 }
 
 /*
- Find a road directly beside a building.
- The building gets a small concrete entrance path leading toward it.
+ Find the closest road to any side of a building.
+ The returned side tells us which way the building entrance should face.
 */
-function buildingEntrance(b){
-  for(let x=b.x;x<b.x+b.w;x++){
-    if(hasRoad(x,b.y-1))return{side:"top",x};
-    if(hasRoad(x,b.y+b.h))return{side:"bottom",x};
+function findBuildingEntrance(b){
+  const left=b.x*TILE;
+  const top=b.y*TILE;
+  const right=(b.x+b.w)*TILE;
+  const bottom=(b.y+b.h)*TILE;
+  const centerX=(left+right)/2;
+  const centerY=(top+bottom)/2;
+
+  let best=null;
+  let bestDistance=Infinity;
+
+  for(const roadKey of roads){
+    const [rx,ry]=parseKey(roadKey);
+    const roadLeft=rx*TILE;
+    const roadTop=ry*TILE;
+    const roadRight=roadLeft+TILE;
+    const roadBottom=roadTop+TILE;
+
+    let side,gap,doorX,doorY,targetX,targetY;
+
+    // Road is above the building
+    if(roadBottom<=top){
+      gap=top-roadBottom;
+      side="top";
+      doorX=centerX;
+      doorY=top;
+      targetX=Math.max(roadLeft+SIDEWALK,Math.min(centerX,roadRight-SIDEWALK));
+      targetY=roadBottom-SIDEWALK/2;
+    }
+    // Road is below the building
+    else if(roadTop>=bottom){
+      gap=roadTop-bottom;
+      side="bottom";
+      doorX=centerX;
+      doorY=bottom;
+      targetX=Math.max(roadLeft+SIDEWALK,Math.min(centerX,roadRight-SIDEWALK));
+      targetY=roadTop+SIDEWALK/2;
+    }
+    // Road is left of the building
+    else if(roadRight<=left){
+      gap=left-roadRight;
+      side="left";
+      doorX=left;
+      doorY=centerY;
+      targetX=roadRight-SIDEWALK/2;
+      targetY=Math.max(roadTop+SIDEWALK,Math.min(centerY,roadBottom-SIDEWALK));
+    }
+    // Road is right of the building
+    else if(roadLeft>=right){
+      gap=roadLeft-right;
+      side="right";
+      doorX=right;
+      doorY=centerY;
+      targetX=roadLeft+SIDEWALK/2;
+      targetY=Math.max(roadTop+SIDEWALK,Math.min(centerY,roadBottom-SIDEWALK));
+    }
+    else{
+      continue;
+    }
+
+    // Ignore roads that are too far away
+    if(gap>MAX_ENTRANCE_DISTANCE*TILE)continue;
+
+    // Prefer roads that are close and directly aligned with the building
+    const distance=gap+Math.abs(
+      side==="top"||side==="bottom"
+        ?centerX-(roadLeft+TILE/2)
+        :centerY-(roadTop+TILE/2)
+    )*0.15;
+
+    if(distance<bestDistance){
+      bestDistance=distance;
+      best={side,doorX,doorY,targetX,targetY};
+    }
   }
-  for(let y=b.y;y<b.y+b.h;y++){
-    if(hasRoad(b.x-1,y))return{side:"left",y};
-    if(hasRoad(b.x+b.w,y))return{side:"right",y};
-  }
-  return null;
+
+  return best;
 }
 
-function drawEntrance(b,px,py,w,h){
-  const entrance=buildingEntrance(b);
+/* Draw the pedestrian path before drawing the building itself. */
+function drawBuildingWalkway(b){
+  const entrance=findBuildingEntrance(b);
   if(!entrance)return;
 
-  const cx=px+w/2,cy=py+h/2;
-  let sx=cx,sy=cy,ex=cx,ey=cy;
+  const {doorX,doorY,targetX,targetY}=entrance;
 
-  if(entrance.side==="top"){
-    sx=(entrance.x-b.x+0.5)*TILE+px;
-    sy=py;
-  }else if(entrance.side==="bottom"){
-    sx=(entrance.x-b.x+0.5)*TILE+px;
-    sy=py+h;
-  }else if(entrance.side==="left"){
-    sx=px;
-    sy=(entrance.y-b.y+0.5)*TILE+py;
-  }else{
-    sx=px+w;
-    sy=(entrance.y-b.y+0.5)*TILE+py;
-  }
-
-  ctx.strokeStyle="#c9c6b9";
-  ctx.lineWidth=7;
   ctx.lineCap="square";
-  ctx.beginPath();
-  ctx.moveTo(sx,sy);
-  ctx.lineTo(cx,cy);
-  ctx.stroke();
-  ctx.lineCap="butt";
 
-  // Small dark entrance door
-  ctx.fillStyle="#514239";
-  ctx.fillRect(cx-4,cy-4,8,8);
+  // Main concrete path
+  ctx.strokeStyle="#bdbbb1";
+  ctx.lineWidth=7;
+  ctx.beginPath();
+  ctx.moveTo(doorX,doorY);
+
+  // Use a right-angle path instead of a diagonal shortcut
+  if(entrance.side==="top"||entrance.side==="bottom"){
+    ctx.lineTo(doorX,targetY);
+    ctx.lineTo(targetX,targetY);
+  }else{
+    ctx.lineTo(targetX,doorY);
+    ctx.lineTo(targetX,targetY);
+  }
+  ctx.stroke();
+
+  // Lighter path edge
+  ctx.strokeStyle="#d8d5ca";
+  ctx.lineWidth=1;
+  ctx.beginPath();
+  ctx.moveTo(doorX,doorY);
+  if(entrance.side==="top"||entrance.side==="bottom"){
+    ctx.lineTo(doorX,targetY);
+    ctx.lineTo(targetX,targetY);
+  }else{
+    ctx.lineTo(targetX,doorY);
+    ctx.lineTo(targetX,targetY);
+  }
+  ctx.stroke();
+
+  ctx.lineCap="butt";
 }
 
 function drawBuilding(b){
-  const px=b.x*TILE,py=b.y*TILE;
-  const w=b.w*TILE,h=b.h*TILE;
+  const px=b.x*TILE;
+  const py=b.y*TILE;
+  const w=b.w*TILE;
+  const h=b.h*TILE;
 
+  // Building base
   ctx.fillStyle="#777b7b";
   ctx.fillRect(px+2,py+2,w-4,h-4);
   ctx.fillStyle=buildingInfo[b.type].color;
@@ -369,9 +450,7 @@ function drawBuilding(b){
   ctx.lineWidth=2;
   ctx.strokeRect(px+5,py+5,w-10,h-10);
 
-  // Entrance walkway connects to the adjacent road sidewalk
-  drawEntrance(b,px+5,py+5,w-10,h-10);
-
+  // Building details
   if(b.type==="house"){
     ctx.fillStyle="#874b36";
     ctx.beginPath();
@@ -380,17 +459,18 @@ function drawBuilding(b){
     ctx.lineTo(px+TILE-4,py+13);
     ctx.closePath();
     ctx.fill();
+
     ctx.fillStyle="#f4e3bf";
     ctx.fillRect(px+7,py+16,7,8);
     ctx.fillRect(px+19,py+16,7,8);
-    ctx.fillStyle="#573c2d";
-    ctx.fillRect(px+13,py+24,7,8);
   }else if(b.type==="park"){
     ctx.fillStyle="#367b3c";
     for(let i=0;i<5;i++){
       const tx=px+12+(i%3)*19;
       const ty=py+13+Math.floor(i/3)*25;
-      ctx.beginPath();ctx.arc(tx,ty,6,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();
+      ctx.arc(tx,ty,6,0,Math.PI*2);
+      ctx.fill();
       ctx.fillStyle="#765b3b";
       ctx.fillRect(tx-1,ty+4,2,7);
       ctx.fillStyle="#367b3c";
@@ -439,54 +519,81 @@ function drawBuilding(b){
       ctx.fillText("STORE",px+15,py+16);
     }
   }
+
+  // Entrance door faces the nearest road
+  drawBuildingDoor(b,px,py,w,h);
 }
 
-/*
- Cars are drawn facing the direction of travel.
- The windshield and headlights are at the FRONT of the car.
-*/
-function drawCar(car){
-  const dx=car.dx||0,dy=car.dy||1;
-  let x=car.x,y=car.y;
+function drawBuildingDoor(b,px,py,w,h){
+  const entrance=findBuildingEntrance(b);
+  if(!entrance)return;
 
-  // Keep vehicles on the right-hand side of American roads
+  const {side,doorX,doorY}=entrance;
+  ctx.fillStyle="#49362c";
+
+  if(side==="top"){
+    ctx.fillRect(doorX-4,doorY+1,8,5);
+  }else if(side==="bottom"){
+    ctx.fillRect(doorX-4,doorY-6,8,5);
+  }else if(side==="left"){
+    ctx.fillRect(doorX+1,doorY-4,5,8);
+  }else if(side==="right"){
+    ctx.fillRect(doorX-6,doorY-4,5,8);
+  }
+}
+
+/* Vehicles */
+function drawCar(car){
+  const dx=car.dx||0;
+  const dy=car.dy||1;
+
+  let x=car.x;
+  let y=car.y;
+
+  // American right-hand traffic lane offset
   if(dy!==0)x+=dy>0?-5:5;
   else y+=dx>0?5:-5;
 
   ctx.save();
   ctx.translate(x,y);
+
+  // The front of the vehicle always points along its direction
   ctx.rotate(Math.atan2(dy,dx));
 
   // Wheels
   ctx.fillStyle="#171a1d";
-  ctx.fillRect(-6,-5,4,2);
+  ctx.fillRect(-7,-5,4,2);
   ctx.fillRect(3,-5,4,2);
-  ctx.fillRect(-6,3,4,2);
+  ctx.fillRect(-7,3,4,2);
   ctx.fillRect(3,3,4,2);
 
-  // Vehicle body: front points toward positive X
+  // Body
   ctx.fillStyle=car.color;
-  ctx.fillRect(-8,-4,16,8);
+  ctx.beginPath();
+  ctx.roundRect(-9,-5,18,10,3);
+  ctx.fill();
 
-  // Front hood and windshield
+  // Windshield at front
   ctx.fillStyle="#9bc7dc";
-  ctx.fillRect(1,-3,4,6);
+  ctx.fillRect(2,-3,4,6);
 
-  // Front headlights
+  // Headlights
   ctx.fillStyle="#fff4bd";
-  ctx.fillRect(7,-3,2,2);
-  ctx.fillRect(7,1,2,2);
+  ctx.fillRect(8,-4,2,3);
+  ctx.fillRect(8,1,2,3);
 
   // Rear lights
   ctx.fillStyle="#e84c45";
-  ctx.fillRect(-8,-3,2,2);
-  ctx.fillRect(-8,1,2,2);
+  ctx.fillRect(-9,-4,2,3);
+  ctx.fillRect(-9,1,2,3);
 
   ctx.restore();
 }
 
 function draw(){
-  const width=area.clientWidth,height=area.clientHeight;
+  const width=area.clientWidth;
+  const height=area.clientHeight;
+
   ctx.clearRect(0,0,width,height);
   ctx.save();
   ctx.translate(cameraX,cameraY);
@@ -500,9 +607,11 @@ function draw(){
   // Grass
   for(let y=top;y<bottom;y++){
     for(let x=left;x<right;x++){
-      const px=x*TILE,py=y*TILE;
+      const px=x*TILE;
+      const py=y*TILE;
       ctx.fillStyle=((x+y)%2===0)?"#648b50":"#60864d";
       ctx.fillRect(px,py,TILE,TILE);
+
       if((x*7+y*13)%17===0){
         ctx.fillStyle="#72965d";
         ctx.fillRect(px+8,py+9,2,2);
@@ -510,17 +619,20 @@ function draw(){
     }
   }
 
-  // Roads and sidewalks
+  // Roads and connected sidewalks
   for(let y=top;y<bottom;y++){
     for(let x=left;x<right;x++){
       if(hasRoad(x,y))drawRoad(x,y,x*TILE,y*TILE);
     }
   }
 
-  // Buildings and their entrance walkways
+  // Pedestrian paths first, so buildings sit on top of them
+  for(const b of buildings)drawBuildingWalkway(b);
+
+  // Buildings and entrance doors
   for(const b of buildings)drawBuilding(b);
 
-  // Vehicles
+  // Cars
   for(const car of cars)drawCar(car);
 
   ctx.strokeStyle="#344b36";
@@ -529,6 +641,7 @@ function draw(){
   ctx.restore();
 }
 
+/* Basic road route finding */
 function findPath(start,goal){
   const queue=[start];
   const cameFrom=new Map();
@@ -539,10 +652,14 @@ function findPath(start,goal){
   while(queue.length){
     const current=queue.shift();
     if(current===goal){found=true;break;}
+
     const [x,y]=parseKey(current);
 
     for(const [dx,dy] of dirs){
-      const nx=x+dx,ny=y+dy,next=key(nx,ny);
+      const nx=x+dx;
+      const ny=y+dy;
+      const next=key(nx,ny);
+
       if(hasRoad(nx,ny)&&!cameFrom.has(next)){
         cameFrom.set(next,current);
         queue.push(next);
@@ -551,21 +668,27 @@ function findPath(start,goal){
   }
 
   if(!found)return null;
+
   const path=[];
   let current=goal;
+
   while(current!==null){
     path.push(current);
     current=cameFrom.get(current);
   }
+
   return path.reverse();
 }
 
 function spawnCar(){
   const roadList=[...roads];
   if(roadList.length<5)return;
+
   const start=roadList[Math.floor(Math.random()*roadList.length)];
   const goal=roadList[Math.floor(Math.random()*roadList.length)];
+
   if(start===goal)return;
+
   const path=findPath(start,goal);
   if(!path||path.length<2)return;
 
@@ -574,7 +697,8 @@ function spawnCar(){
 
   cars.push({
     path,index:0,progress:0,
-    x:x*TILE+TILE/2,y:y*TILE+TILE/2,
+    x:x*TILE+TILE/2,
+    y:y*TILE+TILE/2,
     dx:0,dy:1,
     speed:34+Math.random()*18,
     color:colors[Math.floor(Math.random()*colors.length)]
@@ -584,6 +708,7 @@ function spawnCar(){
 function updateCars(dt){
   for(let i=cars.length-1;i>=0;i--){
     const car=cars[i];
+
     if(car.index>=car.path.length-1){
       cars.splice(i,1);
       continue;
@@ -591,7 +716,8 @@ function updateCars(dt){
 
     const current=parseKey(car.path[car.index]);
     const next=parseKey(car.path[car.index+1]);
-    const dx=next[0]-current[0],dy=next[1]-current[1];
+    const dx=next[0]-current[0];
+    const dy=next[1]-current[1];
 
     // Stop before entering a red-light intersection
     if(isIntersection(next[0],next[1])){
@@ -600,13 +726,12 @@ function updateCars(dt){
       if(!green)continue;
     }
 
-    car.dx=dx;
-    car.dy=dy;
     car.progress+=car.speed*dt/TILE;
 
     while(car.progress>=1){
       car.progress-=1;
       car.index++;
+
       if(car.index>=car.path.length-1){
         car.progress=0;
         break;
@@ -616,7 +741,9 @@ function updateCars(dt){
     if(car.index<car.path.length-1){
       const a=parseKey(car.path[car.index]);
       const b=parseKey(car.path[car.index+1]);
-      const ndx=b[0]-a[0],ndy=b[1]-a[1];
+
+      const ndx=b[0]-a[0];
+      const ndy=b[1]-a[1];
 
       car.x=(a[0]+ndx*car.progress)*TILE+TILE/2;
       car.y=(a[1]+ndy*car.progress)*TILE+TILE/2;
@@ -629,6 +756,7 @@ function updateCars(dt){
 function animate(time){
   const dt=Math.min((time-lastTime)/1000||0,0.05);
   lastTime=time;
+
   signalClock=(signalClock+dt)%14;
   spawnTimer+=dt;
 
@@ -651,7 +779,7 @@ document.querySelectorAll(".tool").forEach(button=>{
   });
 });
 
-// Mouse and touch camera controls
+// Mouse and touch controls
 canvas.addEventListener("pointerdown",e=>{
   canvas.setPointerCapture(e.pointerId);
   lastPointer={x:e.offsetX,y:e.offsetY};
@@ -666,8 +794,10 @@ canvas.addEventListener("pointerdown",e=>{
 
 canvas.addEventListener("pointermove",e=>{
   if(!dragging||!lastPointer)return;
+
   cameraX+=e.offsetX-lastPointer.x;
   cameraY+=e.offsetY-lastPointer.y;
+
   lastPointer={x:e.offsetX,y:e.offsetY};
   draw();
 });
@@ -681,23 +811,31 @@ canvas.addEventListener("pointercancel",endPointer);
 
 canvas.addEventListener("wheel",e=>{
   e.preventDefault();
+
   const oldZoom=zoom;
   const factor=e.deltaY<0?1.12:0.89;
   const nextZoom=Math.max(0.5,Math.min(2.5,zoom*factor));
+
   const wx=(e.offsetX-cameraX)/oldZoom;
   const wy=(e.offsetY-cameraY)/oldZoom;
+
   zoom=nextZoom;
   cameraX=e.offsetX-wx*zoom;
   cameraY=e.offsetY-wy*zoom;
+
   draw();
 },{passive:false});
 
 document.getElementById("zoomIn").onclick=()=>{
-  zoom=Math.min(2.5,zoom*1.2);draw();
+  zoom=Math.min(2.5,zoom*1.2);
+  draw();
 };
+
 document.getElementById("zoomOut").onclick=()=>{
-  zoom=Math.max(0.5,zoom/1.2);draw();
+  zoom=Math.max(0.5,zoom/1.2);
+  draw();
 };
+
 document.getElementById("resetCamera").onclick=()=>{
   zoom=1;
   cameraX=area.clientWidth/2-(WORLD_W*TILE)/2;
@@ -707,6 +845,7 @@ document.getElementById("resetCamera").onclick=()=>{
 
 window.addEventListener("keydown",e=>{
   const amount=35;
+
   if(e.key==="ArrowUp")cameraY+=amount;
   else if(e.key==="ArrowDown")cameraY-=amount;
   else if(e.key==="ArrowLeft")cameraX+=amount;
@@ -714,12 +853,14 @@ window.addEventListener("keydown",e=>{
   else if(e.key==="+"||e.key==="=")zoom=Math.min(2.5,zoom*1.15);
   else if(e.key==="-")zoom=Math.max(0.5,zoom/1.15);
   else return;
+
   draw();
 });
 
 // Save and load
 function saveCity(){
   const data={money,roads:[...roads],buildings};
+
   try{
     localStorage.setItem("americanCityBuilderSave",JSON.stringify(data));
     notify("City saved on this device!");
@@ -732,12 +873,17 @@ function loadCity(){
   try{
     const raw=localStorage.getItem("americanCityBuilderSave");
     if(!raw){notify("No saved city found.");return;}
+
     const data=JSON.parse(raw);
-    if(!Array.isArray(data.roads)||!Array.isArray(data.buildings))throw new Error();
+    if(!Array.isArray(data.roads)||!Array.isArray(data.buildings)){
+      throw new Error();
+    }
+
     money=Number(data.money)||0;
     roads=new Set(data.roads);
     buildings=data.buildings;
     cars=[];
+
     updateUI();
     draw();
     notify("City loaded!");
@@ -748,22 +894,27 @@ function loadCity(){
 
 document.getElementById("save").onclick=saveCity;
 document.getElementById("load").onclick=loadCity;
+
 document.getElementById("newCity").onclick=()=>{
   if(!confirm("Start a new city? Unsaved progress will be lost."))return;
+
   money=5000;
   roads=new Set();
   buildings=[];
   cars=[];
+
   updateUI();
   draw();
   notify("New city started!");
 };
 
-// Start game
+// Start
 updateUI();
 resize();
+
 cameraX=area.clientWidth/2-(WORLD_W*TILE)/2;
 cameraY=area.clientHeight/2-(WORLD_H*TILE)/2;
+
 draw();
 requestAnimationFrame(animate);
 
