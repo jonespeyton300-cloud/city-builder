@@ -72,7 +72,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 <div id="gameArea">
 <canvas id="game"></canvas>
 <div id="toast"></div>
-<div id="help">Drag to build roads! Cars turn around at the end of their routes.</div>
+<div id="help">Build roads and watch cars explore your city!</div>
 </div>
 </main>
 
@@ -524,76 +524,109 @@ function draw(){
  ctx.restore();
 }
 
-/* Road pathfinding */
-function findPath(start,goal){
- const queue=[start];
- const cameFrom=new Map([[start,null]]);
+/* Random road navigation */
+
+function getRoadNeighbors(x,y){
+ const options=[];
  const dirs=[[0,-1],[1,0],[0,1],[-1,0]];
- let found=false,head=0;
 
- while(head<queue.length){
-  const current=queue[head++];
-  if(current===goal){found=true;break;}
-
-  const [x,y]=parseKey(current);
-  for(const [dx,dy] of dirs){
-   const nx=x+dx,ny=y+dy,next=key(nx,ny);
-   if(hasRoad(nx,ny)&&!cameFrom.has(next)){
-    cameFrom.set(next,current);
-    queue.push(next);
-   }
+ for(const [dx,dy] of dirs){
+  const nx=x+dx,ny=y+dy;
+  if(hasRoad(nx,ny)){
+   options.push({x:nx,y:ny,dx,dy});
   }
  }
+ return options;
+}
 
- if(!found)return null;
+/*
+ * Pick a random direction.
+ * Straight travel is favored, but cars can turn at intersections.
+ * Cars only reverse when there is no other road to take.
+ */
+function chooseRandomRoad(currentKey,previousKey){
+ const [x,y]=parseKey(currentKey);
+ const options=getRoadNeighbors(x,y);
 
- const path=[];
- let current=goal;
- while(current!==null){
-  path.push(current);
-  current=cameFrom.get(current);
+ if(options.length===0)return null;
+ if(options.length===1)return options[0];
+
+ const forward=previousKey?(()=>{
+  const [px,py]=parseKey(previousKey);
+  return{x:x-px,y:y-py};
+ })():null;
+
+ let choices=options.filter(o=>{
+  return !previousKey||key(o.x,o.y)!==previousKey;
+ });
+
+ if(choices.length===0)choices=options;
+
+ if(forward&&choices.length>1){
+  const straight=choices.filter(o=>o.dx===forward.x&&o.dy===forward.y);
+  if(straight.length&&Math.random()<0.55)return straight[0];
  }
- return path.reverse();
+
+ return choices[Math.floor(Math.random()*choices.length)];
+}
+
+/*
+ * Give each car a long random route.
+ * The route is extended as the car drives, so it never has
+ * to reverse just because it reached the end of a stored path.
+ */
+function extendCarRoute(car,amount=24){
+ for(let i=0;i<amount;i++){
+  const current=car.path[car.path.length-1];
+  const previous=car.path.length>1?car.path[car.path.length-2]:null;
+  const next=chooseRandomRoad(current,previous);
+
+  if(!next)break;
+  car.path.push(key(next.x,next.y));
+ }
 }
 
 /* Create cars on connected roads. */
 function spawnCar(){
  const list=[...roads].filter(k=>{
   const [x,y]=parseKey(k);
-  return roadDegree(x,y)<3;
+  return roadDegree(x,y)>=2;
  });
- if(list.length<5)return;
 
- for(let attempt=0;attempt<12;attempt++){
+ if(list.length===0)return;
+
+ for(let attempt=0;attempt<20;attempt++){
   const start=list[Math.floor(Math.random()*list.length)];
-  const goal=list[Math.floor(Math.random()*list.length)];
-  if(start===goal)continue;
+  const [x,y]=parseKey(start);
+  const firstOptions=getRoadNeighbors(x,y);
 
-  const path=findPath(start,goal);
-  if(!path||path.length<2)continue;
+  if(firstOptions.length===0)continue;
 
-  const [x,y]=parseKey(path[0]);
-  const [nx,ny]=parseKey(path[1]);
+  const first=firstOptions[Math.floor(Math.random()*firstOptions.length)];
   const sx=x*TILE+TILE/2,sy=y*TILE+TILE/2;
 
-  if(cars.some(c=>Math.hypot(c.x-sx,c.y-sy)<28))continue;
+  /* Keep newly spawned cars away from existing cars. */
+  if(cars.some(c=>Math.hypot(c.x-sx,c.y-sy)<34))continue;
 
   const colors=["#e7e7e7","#c84e45","#477db5","#252a30","#d4ad4b","#3b9c75"];
 
-  cars.push({
+  const car={
    id:nextCarId++,
-   path,
+   path:[start,key(first.x,first.y)],
    index:0,
    progress:0,
    x:sx,y:sy,
-   dx:nx-x,dy:ny-y,
-   angle:Math.atan2(ny-y,nx-x),
-   speed:34+Math.random()*18,
+   dx:first.dx,dy:first.dy,
+   angle:Math.atan2(first.dy,first.dx),
+   speed:30+Math.random()*13,
    color:colors[Math.floor(Math.random()*colors.length)],
    lockedIntersection:null,
    stopAt:null,
    stopTimer:0
-  });
+  };
+
+  extendCarRoute(car,28);
+  cars.push(car);
   return;
  }
 }
@@ -611,13 +644,14 @@ function lerpAngle(a,b,t){
 }
 
 /* Intersection management */
+
 function intersectionIsClear(intersectionKey,car){
  const [ix,iy]=parseKey(intersectionKey);
  const cx=ix*TILE+TILE/2,cy=iy*TILE+TILE/2;
 
  for(const other of cars){
   if(other===car)continue;
-  if(Math.hypot(other.x-cx,other.y-cy)<26)return false;
+  if(Math.hypot(other.x-cx,other.y-cy)<25)return false;
  }
  return true;
 }
@@ -627,16 +661,22 @@ function lightIsGreen(dx,dy){
  return signalClock>=7;
 }
 
+/*
+ * Check the actual distance to cars ahead in the same lane.
+ * A larger following gap helps prevent cars from bunching up.
+ */
 function carHasSafeGap(car,dx,dy){
+ const minGap=25;
+
  for(const other of cars){
   if(other===car)continue;
-  if(other.dx!==dx||other.dy!==dy)continue;
 
-  const vx=other.x-car.x,vy=other.y-car.y;
+  const vx=other.x-car.x;
+  const vy=other.y-car.y;
   const forward=vx*dx+vy*dy;
   const side=Math.abs(vx*(-dy)+vy*dx);
 
-  if(forward>0&&forward<22&&side<8)return false;
+  if(forward>0&&forward<minGap&&side<9)return false;
  }
  return true;
 }
@@ -651,51 +691,65 @@ function releaseIntersection(car){
 }
 
 /*
- * Cars reserve intersections before entering them.
- * They keep the reservation while crossing.
- * At the end of a route, they reverse direction instead
- * of being removed from the game.
+ * Cars drive along randomly selected roads.
+ * They extend their route before reaching its end.
+ * Traffic lights, stop signs, intersection reservations,
+ * and following distances are handled here.
  */
 function updateCars(dt){
  for(let i=cars.length-1;i>=0;i--){
   const car=cars[i];
 
-  /* Safety check: reverse a route if a car is already at its end. */
-  if(car.index>=car.path.length-1){
-   releaseIntersection(car);
-   car.path.reverse();
-   car.index=0;
-   car.progress=0;
-  }
-
   if(car.path.length<2){
+   releaseIntersection(car);
    cars.splice(i,1);
    continue;
   }
 
-  const from=parseKey(car.path[car.index]);
-  const to=parseKey(car.path[car.index+1]);
-  const dx=to[0]-from[0],dy=to[1]-from[1];
+  /* Extend the route before the car reaches its final segment. */
+  if(car.index>=car.path.length-3){
+   extendCarRoute(car,20);
+  }
+
+  /* If the road was removed, safely remove this car. */
   const currentKey=car.path[car.index];
   const destinationKey=car.path[car.index+1];
+
+  if(!currentKey||!destinationKey){
+   releaseIntersection(car);
+   cars.splice(i,1);
+   continue;
+  }
+
+  const from=parseKey(currentKey);
+  const to=parseKey(destinationKey);
+
+  const dx=to[0]-from[0],dy=to[1]-from[1];
   const destinationDegree=roadDegree(to[0],to[1]);
   const destinationIsIntersection=destinationDegree>=3;
+
+  if(!hasRoad(from[0],from[1])||!hasRoad(to[0],to[1])){
+   releaseIntersection(car);
+   cars.splice(i,1);
+   continue;
+  }
 
   car.dx=dx;
   car.dy=dy;
 
   /*
-   * Release an intersection after the car has moved out
-   * of its intersection tile and onto the next road segment.
+   * Release the intersection reservation after the car
+   * has mostly crossed the intersection tile.
    */
-  if(car.lockedIntersection===currentKey&&car.progress>=0.82){
+  if(car.lockedIntersection===currentKey&&car.progress>=0.78){
    releaseIntersection(car);
   }
 
   let allowedProgress=1;
 
   /*
-   * Stop before an intersection if it is not safe to enter.
+   * Stop before intersections when the light is red,
+   * another car owns the intersection, or it is occupied.
    */
   if(destinationIsIntersection&&car.lockedIntersection!==destinationKey){
    const stopLine=0.34;
@@ -738,9 +792,11 @@ function updateCars(dt){
   }
 
   /*
-   * Keep a safe gap between cars traveling in the same lane.
+   * Do not allow cars to overlap.
+   * A stopped car ahead will hold up the following car,
+   * but the following car can move again as soon as space opens.
    */
-  if(!car.lockedIntersection&&!carHasSafeGap(car,dx,dy)){
+  if(!carHasSafeGap(car,dx,dy)){
    allowedProgress=Math.min(allowedProgress,car.progress);
   }
 
@@ -748,25 +804,25 @@ function updateCars(dt){
   car.progress=Math.min(allowedProgress,car.progress+step);
 
   /*
-   * Move to the next segment when the current segment is complete.
-   * If the car reaches the end of its route, reverse the route.
-   * It stays in the simulation instead of despawning.
+   * Complete the current road tile.
+   * No reversing or despawning occurs at route endpoints.
    */
   while(car.progress>=1){
    car.progress-=1;
    car.index++;
 
+   if(car.index>=car.path.length-3){
+    extendCarRoute(car,20);
+   }
+
    if(car.index>=car.path.length-1){
-    releaseIntersection(car);
-    car.path.reverse();
-    car.index=0;
-    car.progress=0;
     break;
    }
   }
 
   const a=parseKey(car.path[car.index]);
   const b=parseKey(car.path[car.index+1]);
+
   const mx=b[0]-a[0],my=b[1]-a[1];
 
   const startOffset=laneOffset(mx,my);
