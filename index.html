@@ -3,629 +3,714 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>My City Builder</title>
-
+<title>American City Builder</title>
 <style>
-* { box-sizing: border-box; }
-
-body {
-  margin: 0;
-  background: #202a35;
-  color: white;
-  font-family: Arial, sans-serif;
-}
-
-header {
-  background: #17212b;
-  padding: 14px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-h1 { margin: 0; font-size: 22px; }
-
-.stats {
-  display: flex;
-  gap: 16px;
-  font-weight: bold;
-  color: #8de6a0;
-}
-
-main {
-  max-width: 1100px;
-  margin: 20px auto;
-  padding: 10px;
-}
-
-.toolbar, .camera-tools {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 12px;
-}
-
-button {
-  border: 2px solid #526477;
-  background: #344454;
-  color: white;
-  padding: 11px 14px;
-  border-radius: 7px;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-button:hover { background: #50677c; }
-
-button.active {
-  background: #238c55;
-  border-color: #66e39a;
-}
-
-.game-container {
-  background: #17212b;
-  padding: 10px;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-canvas {
-  display: block;
-  width: 100%;
-  height: auto;
-  border-radius: 5px;
-  cursor: crosshair;
-  touch-action: none;
-}
-
-.info {
-  color: #bdc9d5;
-  margin-top: 12px;
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.camera-label {
-  color: #9fb2c5;
-  font-size: 13px;
-  margin-left: auto;
-  align-self: center;
-}
-
-@media(max-width:600px) {
-  .stats { font-size: 13px; gap: 9px; }
-  button { padding: 9px; }
-  h1 { font-size: 19px; }
+*{box-sizing:border-box}
+body{margin:0;background:#17202b;color:#f3f6fa;font-family:Arial,sans-serif;overflow:hidden}
+header{height:58px;background:#202d3b;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid #3a4b5d}
+h1{font-size:19px;margin:0}
+.stats{display:flex;gap:18px;font-size:14px;flex-wrap:wrap}
+.stats strong{color:#8de0a4}
+main{display:flex;height:calc(100vh - 58px)}
+aside{width:190px;flex-shrink:0;background:#202d3b;padding:12px;overflow-y:auto;border-right:1px solid #3a4b5d}
+.section{font-size:11px;color:#9fb1c2;font-weight:bold;margin:12px 0 7px;text-transform:uppercase;letter-spacing:1px}
+.tool{display:block;width:100%;padding:10px 9px;margin:5px 0;border:1px solid #425469;border-radius:6px;background:#2a3a4b;color:white;text-align:left;cursor:pointer;font-size:13px}
+.tool:hover{background:#3b5065}
+.tool.active{background:#246a50;border-color:#64d49c}
+.tool small{float:right;color:#b9c8d5}
+.actions{display:flex;gap:6px;margin-top:12px}
+.actions button{flex:1;padding:9px 4px;background:#34495e;color:white;border:0;border-radius:5px;cursor:pointer}
+#gameArea{flex:1;min-width:0;position:relative;background:#567d49;overflow:hidden}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+#help{position:absolute;bottom:10px;left:10px;background:#17202bdc;padding:8px 11px;border-radius:6px;color:#d9e3ec;font-size:12px;pointer-events:none}
+#toast{position:absolute;top:12px;left:50%;transform:translateX(-50%);background:#17202beF;padding:9px 15px;border-radius:7px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+#toast.show{opacity:1}
+@media(max-width:650px){
+ header{height:70px;align-items:flex-start;padding-top:8px;flex-direction:column;gap:5px}
+ h1{font-size:16px}.stats{font-size:12px;gap:12px}
+ main{height:calc(100vh - 70px)}
+ aside{width:135px;padding:7px}
+ .tool{font-size:11px;padding:9px 6px}
+ .tool small{float:none;display:block;margin-top:3px}
+ #help{font-size:10px;max-width:85%}
 }
 </style>
 </head>
-
 <body>
-
 <header>
-  <h1>🏙️ My City Builder</h1>
-
+  <h1>🇺🇸 American City Builder</h1>
   <div class="stats">
-    <span>💰 $<span id="money">1000</span></span>
-    <span>🏠 <span id="buildings">0</span></span>
-    <span>🔍 <span id="zoomText">100%</span></span>
+    <span>Money: <strong id="money">$5,000</strong></span>
+    <span>Buildings: <strong id="buildingCount">0</strong></span>
+    <span>Cars: <strong id="carCount">0</strong></span>
   </div>
 </header>
 
 <main>
+<aside>
+  <div class="section">Tools</div>
+  <button class="tool active" data-tool="road">🛣️ Road <small>$10</small></button>
+  <button class="tool" data-tool="pan">✋ Move Camera</button>
+  <button class="tool" data-tool="demolish">🧹 Demolish</button>
 
-  <div class="toolbar">
-    <button class="active" data-tool="road">🛣️ Road ($10)</button>
-    <button data-tool="house">🏠 House ($100)</button>
-    <button data-tool="shop">🏪 Shop ($150)</button>
-    <button data-tool="park">🌳 Park ($50)</button>
-    <button data-tool="demolish">🗑️ Demolish</button>
-    <button data-tool="pan">✋ Move Camera</button>
+  <div class="section">Residential</div>
+  <button class="tool" data-tool="house">🏠 House <small>$100</small></button>
+  <button class="tool" data-tool="apartment">🏢 Apartments <small>$350</small></button>
+
+  <div class="section">Commercial</div>
+  <button class="tool" data-tool="shop">🏪 Store <small>$220</small></button>
+  <button class="tool" data-tool="gas">⛽ Gas Station <small>$300</small></button>
+
+  <div class="section">Community</div>
+  <button class="tool" data-tool="park">🌳 Park <small>$100</small></button>
+  <button class="tool" data-tool="school">🏫 School <small>$500</small></button>
+
+  <div class="section">Emergency Services</div>
+  <button class="tool" data-tool="police">🚓 Police Station <small>$700</small></button>
+  <button class="tool" data-tool="fire">🚒 Fire Station <small>$700</small></button>
+
+  <div class="section">World</div>
+  <div class="actions">
+    <button id="zoomOut">−</button>
+    <button id="zoomIn">+</button>
   </div>
-
-  <div class="camera-tools">
-    <button id="zoomOut">➖ Zoom Out</button>
-    <button id="zoomIn">➕ Zoom In</button>
-    <button id="resetView">🎯 Reset View</button>
-    <span class="camera-label" id="position">Map: 50, 50</span>
+  <div class="actions">
+    <button id="resetCamera">Center</button>
   </div>
-
-  <div class="game-container">
-    <canvas id="game" width="960" height="640"></canvas>
+  <div class="actions">
+    <button id="save">Save</button>
+    <button id="load">Load</button>
   </div>
-
-  <div class="info">
-    <b>Building:</b> Select a building and click an empty tile.<br>
-    <b>Zoom:</b> Use your mouse wheel or zoom buttons.<br>
-    <b>Move:</b> Select Move Camera and drag the map.<br>
-    <b>Keyboard:</b> Use arrow keys to move the camera and + / - to zoom.<br>
-    <b>World:</b> 100 × 100 tiles.
+  <div class="actions">
+    <button id="newCity">New City</button>
   </div>
+</aside>
 
+<div id="gameArea">
+  <canvas id="game"></canvas>
+  <div id="toast"></div>
+  <div id="help">Select a tool and click the map. Roads connect automatically. Use Move Camera to drag, scroll to zoom, or use the arrow keys.</div>
+</div>
 </main>
 
 <script>
+(() => {
+"use strict";
+
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
+const area = document.getElementById("gameArea");
+const moneyLabel = document.getElementById("money");
+const buildingLabel = document.getElementById("buildingCount");
+const carLabel = document.getElementById("carCount");
+const toast = document.getElementById("toast");
 
 const TILE = 32;
-const COLS = 100;
-const ROWS = 100;
+const WORLD_W = 100;
+const WORLD_H = 100;
 
-const WORLD_WIDTH = COLS * TILE;
-const WORLD_HEIGHT = ROWS * TILE;
-
-let money = 1000;
+let money = 5000;
 let selectedTool = "road";
-
 let zoom = 1;
-const MIN_ZOOM = 0.5;
-const MAX_ZOOM = 2.5;
-
-let cameraX = WORLD_WIDTH / 2 - canvas.width / 2;
-let cameraY = WORLD_HEIGHT / 2 - canvas.height / 2;
-
-let mouse = {x: 0, y: 0};
-
+let cameraX = 0;
+let cameraY = 0;
+let roads = new Set();
+let buildings = [];
+let cars = [];
+let lastTime = 0;
+let spawnTimer = 0;
+let signalClock = 0;
 let dragging = false;
 let dragMoved = false;
-let dragStart = {x: 0, y: 0};
-let lastPointer = {x: 0, y: 0};
-
-let world = Array.from(
-  {length: ROWS},
-  () => Array(COLS).fill(null)
-);
+let lastPointer = null;
+let toastTimer = null;
 
 const prices = {
-  road: 10,
-  house: 100,
-  shop: 150,
-  park: 50
+  road:10, house:100, apartment:350, shop:220,
+  gas:300, park:100, school:500, police:700, fire:700
 };
 
-function clampCamera() {
-  const viewWidth = canvas.width / zoom;
-  const viewHeight = canvas.height / zoom;
+const buildingInfo = {
+  house:{w:1,h:1,color:"#c98e55",name:"House"},
+  apartment:{w:2,h:2,color:"#b8a6c9",name:"Apartments"},
+  shop:{w:2,h:2,color:"#e4b85e",name:"Store"},
+  gas:{w:2,h:2,color:"#5b9cbb",name:"Gas Station"},
+  park:{w:2,h:2,color:"#62a65e",name:"Park"},
+  school:{w:3,h:2,color:"#d8c27c",name:"School"},
+  police:{w:2,h:2,color:"#6489b7",name:"Police Station"},
+  fire:{w:2,h:2,color:"#c75f51",name:"Fire Station"}
+};
 
-  cameraX = Math.max(
-    0,
-    Math.min(WORLD_WIDTH - viewWidth, cameraX)
-  );
+const key = (x,y) => `${x},${y}`;
+const parseKey = k => k.split(",").map(Number);
+const hasRoad = (x,y) => roads.has(key(x,y));
+const inside = (x,y) => x>=0 && y>=0 && x<WORLD_W && y<WORLD_H;
 
-  cameraY = Math.max(
-    0,
-    Math.min(WORLD_HEIGHT - viewHeight, cameraY)
-  );
+function notify(message){
+  toast.textContent = message;
+  toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>toast.classList.remove("show"),1800);
 }
 
-function getMousePosition(event) {
-  const rect = canvas.getBoundingClientRect();
+function updateUI(){
+  moneyLabel.textContent = "$"+money.toLocaleString();
+  buildingLabel.textContent = buildings.length;
+  carLabel.textContent = cars.length;
+}
 
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1,2);
+  canvas.width = Math.floor(area.clientWidth*dpr);
+  canvas.height = Math.floor(area.clientHeight*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  draw();
+}
+window.addEventListener("resize",resize);
+
+function screenToWorld(sx,sy){
   return {
-    x: (event.clientX - rect.left) * canvas.width / rect.width,
-    y: (event.clientY - rect.top) * canvas.height / rect.height
+    x:(sx-cameraX)/zoom,
+    y:(sy-cameraY)/zoom
   };
 }
 
-function screenToWorld(x, y) {
+function tileAt(sx,sy){
+  const p = screenToWorld(sx,sy);
+  return {x:Math.floor(p.x/TILE),y:Math.floor(p.y/TILE)};
+}
+
+function buildingAt(x,y){
+  return buildings.find(b=>
+    x>=b.x && y>=b.y && x<b.x+b.w && y<b.y+b.h
+  );
+}
+
+function occupied(x,y){
+  return !!buildingAt(x,y);
+}
+
+function placeTile(x,y){
+  if(!inside(x,y)) return;
+
+  if(selectedTool==="demolish"){
+    if(hasRoad(x,y)){
+      roads.delete(key(x,y));
+      money += 5;
+      cars = [];
+      notify("Road demolished");
+    }else{
+      const b=buildingAt(x,y);
+      if(b){
+        buildings=buildings.filter(item=>item!==b);
+        money += Math.floor((prices[b.type]||0)*0.4);
+        notify(b.name+" demolished");
+      }
+    }
+    updateUI();
+    return;
+  }
+
+  if(selectedTool==="pan") return;
+
+  const price=prices[selectedTool];
+  if(money<price){
+    notify("Not enough money!");
+    return;
+  }
+
+  if(selectedTool==="road"){
+    if(occupied(x,y) || hasRoad(x,y)) return;
+    roads.add(key(x,y));
+    money-=price;
+    updateUI();
+    return;
+  }
+
+  const info=buildingInfo[selectedTool];
+  if(!info) return;
+
+  for(let yy=y;yy<y+info.h;yy++){
+    for(let xx=x;xx<x+info.w;xx++){
+      if(!inside(xx,yy)||hasRoad(xx,yy)||occupied(xx,yy)){
+        notify("Not enough clear space for that building");
+        return;
+      }
+    }
+  }
+
+  buildings.push({
+    x,y,w:info.w,h:info.h,type:selectedTool,
+    name:info.name
+  });
+  money-=price;
+  updateUI();
+  notify(info.name+" built!");
+}
+
+function neighbors(x,y){
   return {
-    x: cameraX + x / zoom,
-    y: cameraY + y / zoom
+    n:hasRoad(x,y-1),
+    e:hasRoad(x+1,y),
+    s:hasRoad(x,y+1),
+    w:hasRoad(x-1,y)
   };
 }
 
-function randomDetail(x, y) {
-  const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
-  return n - Math.floor(n);
+function connectionCount(n){
+  return Number(n.n)+Number(n.e)+Number(n.s)+Number(n.w);
 }
 
-function drawGrass(x, y, col, row) {
-  ctx.fillStyle = "#79ad59";
-  ctx.fillRect(x, y, TILE, TILE);
-
-  const detail = randomDetail(col, row);
-
-  if (detail > 0.65) {
-    ctx.fillStyle = "#8cbd68";
-    ctx.fillRect(x + 5, y + 7, 3, 3);
-    ctx.fillRect(x + 23, y + 22, 3, 3);
-  }
-
-  if (detail < 0.12) {
-    ctx.fillStyle = "#6e9e4e";
-    ctx.fillRect(x + 14, y + 5, 3, 3);
-  }
+function isIntersection(x,y){
+  return hasRoad(x,y) && connectionCount(neighbors(x,y))===4;
 }
 
-function drawRoad(x, y) {
-  ctx.fillStyle = "#686d73";
-  ctx.fillRect(x, y, TILE, TILE);
+function drawRoad(x,y,px,py){
+  const n=neighbors(x,y);
+  const count=connectionCount(n);
+  const cx=px+TILE/2, cy=py+TILE/2;
 
-  ctx.strokeStyle = "#d9d4a1";
-  ctx.lineWidth = 2;
-  ctx.setLineDash([5, 5]);
+  ctx.fillStyle="#454a50";
+  ctx.fillRect(px,py,TILE,TILE);
 
+  // Road shoulders and edge markings
+  ctx.strokeStyle="#aeb2b3";
+  ctx.lineWidth=1.4;
   ctx.beginPath();
-  ctx.moveTo(x + 16, y);
-  ctx.lineTo(x + 16, y + TILE);
+  if(n.n||n.s){
+    ctx.moveTo(px+4,py);ctx.lineTo(px+4,py+TILE);
+    ctx.moveTo(px+TILE-4,py);ctx.lineTo(px+TILE-4,py+TILE);
+  }
+  if(n.e||n.w){
+    ctx.moveTo(px,py+4);ctx.lineTo(px+TILE,py+4);
+    ctx.moveTo(px,py+TILE-4);ctx.lineTo(px+TILE,py+TILE-4);
+  }
   ctx.stroke();
 
+  // Center lane markings
+  ctx.strokeStyle="#f4d35e";
+  ctx.lineWidth=1.6;
+  ctx.setLineDash([5,5]);
+  ctx.beginPath();
+  if(n.n){ctx.moveTo(cx,cy);ctx.lineTo(cx,py);}
+  if(n.s){ctx.moveTo(cx,cy);ctx.lineTo(cx,py+TILE);}
+  if(n.e){ctx.moveTo(cx,cy);ctx.lineTo(px+TILE,cy);}
+  if(n.w){ctx.moveTo(cx,cy);ctx.lineTo(px,cy);}
+  ctx.stroke();
   ctx.setLineDash([]);
+
+  // Sidewalk-style corners at connected edges
+  ctx.fillStyle="#777b7d";
+  if(count===0){
+    ctx.strokeStyle="#d6d6d6";
+    ctx.strokeRect(px+4,py+4,TILE-8,TILE-8);
+  }
+
+  // Intersection crosswalks and traffic signals
+  if(count===4){
+    ctx.fillStyle="#e6e6e6";
+    for(let i=0;i<3;i++){
+      ctx.fillRect(px+7+i*6,py+5,3,5);
+      ctx.fillRect(px+7+i*6,py+TILE-10,3,5);
+    }
+    drawSignal(px+5,py+5,signalClock<7);
+    drawSignal(px+TILE-9,py+TILE-9,signalClock>=7);
+  }
 }
 
-function drawHouse(x, y) {
-  ctx.fillStyle = "#8e573b";
-  ctx.fillRect(x + 4, y + 11, 24, 18);
-
-  ctx.fillStyle = "#e5c49a";
-  ctx.fillRect(x + 6, y + 13, 20, 16);
-
-  ctx.fillStyle = "#a84b3f";
+function drawSignal(x,y,green){
+  ctx.fillStyle="#1b2025";
+  ctx.fillRect(x,y,5,9);
+  ctx.fillStyle=green?"#42e36c":"#ed4747";
   ctx.beginPath();
-  ctx.moveTo(x + 2, y + 14);
-  ctx.lineTo(x + 16, y + 2);
-  ctx.lineTo(x + 30, y + 14);
-  ctx.fill();
-
-  ctx.fillStyle = "#6b4735";
-  ctx.fillRect(x + 13, y + 20, 7, 9);
-
-  ctx.fillStyle = "#7ed6ed";
-  ctx.fillRect(x + 7, y + 17, 5, 5);
-  ctx.fillRect(x + 21, y + 17, 5, 5);
-}
-
-function drawShop(x, y) {
-  ctx.fillStyle = "#f1d2a0";
-  ctx.fillRect(x + 3, y + 10, 26, 19);
-
-  ctx.fillStyle = "#e5a34f";
-  ctx.fillRect(x + 3, y + 5, 26, 8);
-
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(x + 6, y + 7, 5, 5);
-  ctx.fillRect(x + 17, y + 7, 5, 5);
-
-  ctx.fillStyle = "#5c4838";
-  ctx.fillRect(x + 12, y + 20, 8, 9);
-}
-
-function drawPark(x, y) {
-  ctx.fillStyle = "#b8d88c";
-  ctx.fillRect(x + 3, y + 3, 26, 26);
-
-  ctx.fillStyle = "#805332";
-  ctx.fillRect(x + 14, y + 15, 5, 13);
-
-  ctx.fillStyle = "#267b3e";
-  ctx.beginPath();
-  ctx.arc(x + 16, y + 12, 11, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = "#64bd65";
-  ctx.beginPath();
-  ctx.arc(x + 12, y + 10, 5, 0, Math.PI * 2);
+  ctx.arc(x+2.5,y+4.5,1.8,0,Math.PI*2);
   ctx.fill();
 }
 
-function drawTile(x, y, type) {
-  if (type === "road") drawRoad(x, y);
-  if (type === "house") drawHouse(x, y);
-  if (type === "shop") drawShop(x, y);
-  if (type === "park") drawPark(x, y);
+function drawBuilding(b){
+  const px=b.x*TILE, py=b.y*TILE;
+  const w=b.w*TILE, h=b.h*TILE;
+  ctx.fillStyle="#777b7b";
+  ctx.fillRect(px+2,py+2,w-4,h-4);
+
+  ctx.fillStyle=buildingInfo[b.type].color;
+  ctx.fillRect(px+5,py+5,w-10,h-10);
+
+  ctx.strokeStyle="#353a3e";
+  ctx.lineWidth=2;
+  ctx.strokeRect(px+5,py+5,w-10,h-10);
+
+  if(b.type==="house"){
+    ctx.fillStyle="#874b36";
+    ctx.beginPath();
+    ctx.moveTo(px+4,py+13);
+    ctx.lineTo(px+TILE/2,py+3);
+    ctx.lineTo(px+TILE-4,py+13);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle="#f4e3bf";
+    ctx.fillRect(px+12,py+16,8,10);
+    ctx.fillStyle="#573c2d";
+    ctx.fillRect(px+22,py+20,6,12);
+  }else if(b.type==="park"){
+    ctx.fillStyle="#367b3c";
+    for(let i=0;i<5;i++){
+      const tx=px+12+(i%3)*19;
+      const ty=py+13+Math.floor(i/3)*25;
+      ctx.beginPath();ctx.arc(tx,ty,6,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle="#765b3b";
+      ctx.fillRect(tx-1,ty+4,2,7);
+      ctx.fillStyle="#367b3c";
+    }
+  }else if(b.type==="gas"){
+    ctx.fillStyle="#f5f1e8";
+    ctx.fillRect(px+12,py+14,17,18);
+    ctx.fillStyle="#d64e42";
+    ctx.fillRect(px+14,py+16,13,5);
+    ctx.fillStyle="#252d34";
+    ctx.fillRect(px+31,py+20,7,10);
+    ctx.fillStyle="#fff";
+    ctx.font="bold 8px Arial";
+    ctx.fillText("GAS",px+15,py+27);
+  }else if(b.type==="school"){
+    ctx.fillStyle="#fff0c5";
+    ctx.fillRect(px+15,py+14,w-30,h-23);
+    ctx.fillStyle="#bd4c43";
+    ctx.fillRect(px+10,py+7,w-20,8);
+    ctx.fillStyle="#414d5c";
+    ctx.font="bold 12px Arial";
+    ctx.fillText("SCHOOL",px+15,py+h-9);
+  }else{
+    ctx.fillStyle="#e7e8e5";
+    for(let yy=0;yy<2;yy++){
+      for(let xx=0;xx<2;xx++){
+        ctx.fillRect(px+12+xx*20,py+12+yy*19,9,10);
+      }
+    }
+    if(b.type==="apartment"){
+      ctx.fillStyle="#514c58";
+      ctx.fillRect(px+w/2-5,py+h-17,10,12);
+    }
+    if(b.type==="police"||b.type==="fire"){
+      ctx.fillStyle=b.type==="police"?"#244e86":"#a52d27";
+      ctx.fillRect(px+w/2-12,py+5,24,9);
+      ctx.fillStyle="#fff";
+      ctx.font="bold 7px Arial";
+      ctx.fillText(b.type==="police"?"POLICE":"FIRE",px+w/2-10,py+12);
+    }
+    if(b.type==="shop"){
+      ctx.fillStyle="#fff0ce";
+      ctx.fillRect(px+10,py+8,w-20,9);
+      ctx.fillStyle="#333";
+      ctx.font="bold 9px Arial";
+      ctx.fillText("STORE",px+15,py+16);
+    }
+  }
 }
 
-function drawWorld() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
+function drawCar(car){
+  const dx=car.dx||0,dy=car.dy||1;
+  let x=car.x,y=car.y;
+  // Right-hand traffic lane offset
+  if(Math.abs(dy)>0){
+    x += dy>0?-5:5;
+  }else{
+    y += dx>0?5:-5;
+  }
   ctx.save();
-
-  // Camera transformation
-  ctx.scale(zoom, zoom);
-  ctx.translate(-cameraX, -cameraY);
-
-  // Only draw tiles visible on the screen
-  const startCol = Math.max(0, Math.floor(cameraX / TILE));
-  const startRow = Math.max(0, Math.floor(cameraY / TILE));
-
-  const endCol = Math.min(
-    COLS,
-    Math.ceil((cameraX + canvas.width / zoom) / TILE)
-  );
-
-  const endRow = Math.min(
-    ROWS,
-    Math.ceil((cameraY + canvas.height / zoom) / TILE)
-  );
-
-  for (let row = startRow; row < endRow; row++) {
-    for (let col = startCol; col < endCol; col++) {
-      const x = col * TILE;
-      const y = row * TILE;
-
-      drawGrass(x, y, col, row);
-      drawTile(x, y, world[row][col]);
-
-      ctx.strokeStyle = "rgba(0,0,0,0.12)";
-      ctx.lineWidth = 1 / zoom;
-      ctx.strokeRect(x, y, TILE, TILE);
-    }
-  }
-
+  ctx.translate(x,y);
+  ctx.rotate(Math.atan2(dy,dx));
+  ctx.fillStyle=car.color;
+  ctx.fillRect(-8,-4,16,8);
+  ctx.fillStyle="#b8d8e8";
+  ctx.fillRect(-3,-3,6,6);
+  ctx.fillStyle="#20272d";
+  ctx.fillRect(-6,-5,4,2);
+  ctx.fillRect(3,-5,4,2);
+  ctx.fillRect(-6,3,4,2);
+  ctx.fillRect(3,3,4,2);
   ctx.restore();
-
-  updateCameraInfo();
 }
 
-function updateStats() {
-  document.getElementById("money").textContent = money;
+function draw(){
+  const width=area.clientWidth;
+  const height=area.clientHeight;
+  ctx.clearRect(0,0,width,height);
+  ctx.save();
+  ctx.translate(cameraX,cameraY);
+  ctx.scale(zoom,zoom);
 
-  let count = 0;
+  const left=Math.max(0,Math.floor(-cameraX/(TILE*zoom))-1);
+  const top=Math.max(0,Math.floor(-cameraY/(TILE*zoom))-1);
+  const right=Math.min(WORLD_W,Math.ceil((width-cameraX)/(TILE*zoom))+1);
+  const bottom=Math.min(WORLD_H,Math.ceil((height-cameraY)/(TILE*zoom))+1);
 
-  for (const row of world) {
-    for (const tile of row) {
-      if (tile && tile !== "road") count++;
+  // Grass tiles
+  for(let y=top;y<bottom;y++){
+    for(let x=left;x<right;x++){
+      const px=x*TILE,py=y*TILE;
+      ctx.fillStyle=((x+y)%2===0)?"#648b50":"#60864d";
+      ctx.fillRect(px,py,TILE,TILE);
+      if((x*7+y*13)%17===0){
+        ctx.fillStyle="#72965d";
+        ctx.fillRect(px+8,py+9,2,2);
+      }
     }
   }
 
-  document.getElementById("buildings").textContent = count;
+  // Roads
+  for(let y=top;y<bottom;y++){
+    for(let x=left;x<right;x++){
+      if(hasRoad(x,y)) drawRoad(x,y,x*TILE,y*TILE);
+    }
+  }
+
+  // Buildings
+  for(const b of buildings) drawBuilding(b);
+
+  // Cars
+  for(const car of cars) drawCar(car);
+
+  // World boundary
+  ctx.strokeStyle="#344b36";
+  ctx.lineWidth=4;
+  ctx.strokeRect(0,0,WORLD_W*TILE,WORLD_H*TILE);
+  ctx.restore();
 }
 
-function updateCameraInfo() {
-  document.getElementById("zoomText").textContent =
-    Math.round(zoom * 100) + "%";
+function findPath(start,goal){
+  const queue=[start];
+  const cameFrom=new Map();
+  cameFrom.set(start,null);
+  const dirs=[[0,-1],[1,0],[0,1],[-1,0]];
+  let found=false;
 
-  const centerX = Math.floor(
-    (cameraX + canvas.width / zoom / 2) / TILE
-  );
+  while(queue.length){
+    const current=queue.shift();
+    if(current===goal){found=true;break;}
+    const [x,y]=parseKey(current);
 
-  const centerY = Math.floor(
-    (cameraY + canvas.height / zoom / 2) / TILE
-  );
+    for(const [dx,dy] of dirs){
+      const nx=x+dx,ny=y+dy;
+      const next=key(nx,ny);
+      if(hasRoad(nx,ny)&&!cameFrom.has(next)){
+        cameFrom.set(next,current);
+        queue.push(next);
+      }
+    }
+  }
 
-  document.getElementById("position").textContent =
-    "Map: " + centerX + ", " + centerY;
+  if(!found) return null;
+  const path=[];
+  let current=goal;
+  while(current!==null){
+    path.push(current);
+    current=cameFrom.get(current);
+  }
+  return path.reverse();
 }
 
-function setZoom(newZoom, screenX = canvas.width / 2,
-                 screenY = canvas.height / 2) {
+function spawnCar(){
+  const roadList=[...roads];
+  if(roadList.length<5) return;
+  const start=roadList[Math.floor(Math.random()*roadList.length)];
+  const goal=roadList[Math.floor(Math.random()*roadList.length)];
+  if(start===goal) return;
+  const path=findPath(start,goal);
+  if(!path||path.length<2) return;
 
-  const before = screenToWorld(screenX, screenY);
-
-  zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
-
-  cameraX = before.x - screenX / zoom;
-  cameraY = before.y - screenY / zoom;
-
-  clampCamera();
-  drawWorld();
+  const colors=["#e7e7e7","#c84e45","#477db5","#252a30","#d4ad4b","#3b9c75"];
+  const [x,y]=parseKey(path[0]);
+  cars.push({
+    path,index:0,progress:0,
+    x:x*TILE+TILE/2,y:y*TILE+TILE/2,
+    dx:0,dy:1,
+    speed:34+Math.random()*18,
+    color:colors[Math.floor(Math.random()*colors.length)]
+  });
 }
 
-function resetCamera() {
-  zoom = 1;
-  cameraX = WORLD_WIDTH / 2 - canvas.width / 2;
-  cameraY = WORLD_HEIGHT / 2 - canvas.height / 2;
+function updateCars(dt){
+  for(let i=cars.length-1;i>=0;i--){
+    const car=cars[i];
+    if(car.index>=car.path.length-1){
+      cars.splice(i,1);
+      continue;
+    }
 
-  clampCamera();
-  drawWorld();
+    const current=parseKey(car.path[car.index]);
+    const next=parseKey(car.path[car.index+1]);
+    const dx=next[0]-current[0];
+    const dy=next[1]-current[1];
+
+    // Traffic lights at four-way intersections.
+    if(isIntersection(next[0],next[1])){
+      const vertical=dy!==0;
+      const green=vertical?signalClock<7:signalClock>=7;
+      if(!green) continue;
+    }
+
+    car.dx=dx;car.dy=dy;
+    car.progress+=car.speed*dt/TILE;
+
+    while(car.progress>=1){
+      car.progress-=1;
+      car.index++;
+      if(car.index>=car.path.length-1){
+        car.progress=0;
+        break;
+      }
+    }
+
+    if(car.index<car.path.length-1){
+      const a=parseKey(car.path[car.index]);
+      const b=parseKey(car.path[car.index+1]);
+      car.x=(a[0]+(b[0]-a[0])*car.progress)*TILE+TILE/2;
+      car.y=(a[1]+(b[1]-a[1])*car.progress)*TILE+TILE/2;
+    }
+  }
 }
 
-// Building selection
-document.querySelectorAll("[data-tool]").forEach(button => {
-  button.addEventListener("click", () => {
-    selectedTool = button.dataset.tool;
+function animate(time){
+  const dt=Math.min((time-lastTime)/1000||0,0.05);
+  lastTime=time;
+  signalClock=(signalClock+dt)%14;
+  spawnTimer+=dt;
 
-    document.querySelectorAll("[data-tool]").forEach(b => {
-      b.classList.remove("active");
-    });
+  if(spawnTimer>2.5){
+    spawnTimer=0;
+    if(cars.length<12) spawnCar();
+  }
 
+  updateCars(dt);
+  draw();
+  requestAnimationFrame(animate);
+}
+
+// Tool selection
+document.querySelectorAll(".tool").forEach(button=>{
+  button.addEventListener("click",()=>{
+    selectedTool=button.dataset.tool;
+    document.querySelectorAll(".tool").forEach(b=>b.classList.remove("active"));
     button.classList.add("active");
-
-    canvas.style.cursor =
-      selectedTool === "pan" ? "grab" : "crosshair";
   });
 });
 
-// Zoom controls
-document.getElementById("zoomIn").addEventListener("click", () => {
-  setZoom(zoom * 1.25);
-});
-
-document.getElementById("zoomOut").addEventListener("click", () => {
-  setZoom(zoom / 1.25);
-});
-
-document.getElementById("resetView").addEventListener("click", resetCamera);
-
-// Mouse wheel zoom
-canvas.addEventListener("wheel", event => {
-  event.preventDefault();
-
-  const pos = getMousePosition(event);
-
-  setZoom(
-    zoom * (event.deltaY < 0 ? 1.15 : 1 / 1.15),
-    pos.x,
-    pos.y
-  );
-}, {passive: false});
-
-// Pointer controls
-canvas.addEventListener("contextmenu", event => {
-  event.preventDefault();
-});
-
-canvas.addEventListener("pointerdown", event => {
-  const pos = getMousePosition(event);
-
-  const wantsPan =
-    selectedTool === "pan" ||
-    event.button === 1 ||
-    event.button === 2;
-
-  if (wantsPan) {
-    dragging = true;
-    dragMoved = false;
-    dragStart = pos;
-    lastPointer = pos;
-
-    canvas.setPointerCapture(event.pointerId);
-    canvas.style.cursor = "grabbing";
-    event.preventDefault();
-    return;
-  }
-
-  if (event.button !== 0) return;
-
-  // Build on pointer release to avoid building while dragging
-  dragging = false;
-  dragStart = pos;
-  lastPointer = pos;
-  dragMoved = false;
-
-  canvas.setPointerCapture(event.pointerId);
-});
-
-canvas.addEventListener("pointermove", event => {
-  const pos = getMousePosition(event);
-  mouse = pos;
-
-  if (!canvas.hasPointerCapture(event.pointerId)) return;
-
-  const wantsPan =
-    selectedTool === "pan" ||
-    event.buttons === 4 ||
-    event.buttons === 2;
-
-  if (dragging) {
-    const dx = pos.x - lastPointer.x;
-    const dy = pos.y - lastPointer.y;
-
-    if (Math.abs(pos.x - dragStart.x) +
-        Math.abs(pos.y - dragStart.y) > 3) {
-      dragMoved = true;
-    }
-
-    cameraX -= dx / zoom;
-    cameraY -= dy / zoom;
-
-    lastPointer = pos;
-
-    clampCamera();
-    drawWorld();
-    return;
-  }
-
-  if (selectedTool === "pan" && wantsPan) {
-    dragging = true;
+// Pointer and camera controls
+canvas.addEventListener("pointerdown",e=>{
+  canvas.setPointerCapture(e.pointerId);
+  lastPointer={x:e.offsetX,y:e.offsetY};
+  dragMoved=false;
+  dragging=selectedTool==="pan";
+  if(!dragging){
+    const tile=tileAt(e.offsetX,e.offsetY);
+    placeTile(tile.x,tile.y);
+    draw();
   }
 });
 
-function placeTile(pos) {
-  const point = screenToWorld(pos.x, pos.y);
+canvas.addEventListener("pointermove",e=>{
+  if(!dragging||!lastPointer) return;
+  const dx=e.offsetX-lastPointer.x;
+  const dy=e.offsetY-lastPointer.y;
+  if(Math.abs(dx)+Math.abs(dy)>1) dragMoved=true;
+  cameraX+=dx;
+  cameraY+=dy;
+  lastPointer={x:e.offsetX,y:e.offsetY};
+  draw();
+});
 
-  const col = Math.floor(point.x / TILE);
-  const row = Math.floor(point.y / TILE);
+function endPointer(){
+  dragging=false;
+  lastPointer=null;
+}
+canvas.addEventListener("pointerup",endPointer);
+canvas.addEventListener("pointercancel",endPointer);
 
-  if (col < 0 || col >= COLS ||
-      row < 0 || row >= ROWS) return;
+canvas.addEventListener("wheel",e=>{
+  e.preventDefault();
+  const oldZoom=zoom;
+  const factor=e.deltaY<0?1.12:0.89;
+  const nextZoom=Math.max(0.5,Math.min(2.5,zoom*factor));
+  const wx=(e.offsetX-cameraX)/oldZoom;
+  const wy=(e.offsetY-cameraY)/oldZoom;
+  zoom=nextZoom;
+  cameraX=e.offsetX-wx*zoom;
+  cameraY=e.offsetY-wy*zoom;
+  draw();
+},{passive:false});
 
-  const existing = world[row][col];
+document.getElementById("zoomIn").onclick=()=>{
+  zoom=Math.min(2.5,zoom*1.2);draw();
+};
+document.getElementById("zoomOut").onclick=()=>{
+  zoom=Math.max(0.5,zoom/1.2);draw();
+};
+document.getElementById("resetCamera").onclick=()=>{
+  zoom=1;
+  cameraX=area.clientWidth/2-(WORLD_W*TILE)/2;
+  cameraY=area.clientHeight/2-(WORLD_H*TILE)/2;
+  draw();
+};
 
-  if (selectedTool === "demolish") {
-    if (existing) {
-      money += Math.floor((prices[existing] || 0) / 2);
-      world[row][col] = null;
-    }
-  } else if (selectedTool !== "pan") {
-    if (existing) return;
+window.addEventListener("keydown",e=>{
+  const amount=35;
+  if(e.key==="ArrowUp")cameraY+=amount;
+  else if(e.key==="ArrowDown")cameraY-=amount;
+  else if(e.key==="ArrowLeft")cameraX+=amount;
+  else if(e.key==="ArrowRight")cameraX-=amount;
+  else if(e.key==="+"||e.key==="=")zoom=Math.min(2.5,zoom*1.15);
+  else if(e.key==="-")zoom=Math.max(0.5,zoom/1.15);
+  else return;
+  draw();
+});
 
-    const price = prices[selectedTool];
-
-    if (money < price) {
-      alert("Not enough money!");
-      return;
-    }
-
-    money -= price;
-    world[row][col] = selectedTool;
+// Save and load
+function saveCity(){
+  const data={money,roads:[...roads],buildings};
+  try{
+    localStorage.setItem("americanCityBuilderSave",JSON.stringify(data));
+    notify("City saved on this device!");
+  }catch(e){
+    notify("Could not save this city.");
   }
-
-  drawWorld();
-  updateStats();
 }
 
-canvas.addEventListener("pointerup", event => {
-  if (dragging) {
-    dragging = false;
-    canvas.style.cursor =
-      selectedTool === "pan" ? "grab" : "crosshair";
-    return;
+function loadCity(){
+  try{
+    const raw=localStorage.getItem("americanCityBuilderSave");
+    if(!raw){notify("No saved city found.");return;}
+    const data=JSON.parse(raw);
+    if(!Array.isArray(data.roads)||!Array.isArray(data.buildings)) throw new Error();
+    money=Number(data.money)||0;
+    roads=new Set(data.roads);
+    buildings=data.buildings;
+    cars=[];
+    updateUI();
+    draw();
+    notify("City loaded!");
+  }catch(e){
+    notify("Save file could not be loaded.");
   }
+}
 
-  if (!dragMoved && event.button === 0) {
-    const pos = getMousePosition(event);
-    placeTile(pos);
-  }
-});
+document.getElementById("save").onclick=saveCity;
+document.getElementById("load").onclick=loadCity;
+document.getElementById("newCity").onclick=()=>{
+  if(!confirm("Start a new city? Unsaved progress will be lost."))return;
+  money=5000;roads=new Set();buildings=[];cars=[];
+  updateUI();draw();notify("New city started!");
+};
 
-canvas.addEventListener("pointercancel", () => {
-  dragging = false;
-  dragMoved = false;
-  canvas.style.cursor =
-    selectedTool === "pan" ? "grab" : "crosshair";
-});
+// Start with a centered camera
+updateUI();
+resize();
+cameraX=area.clientWidth/2-(WORLD_W*TILE)/2;
+cameraY=area.clientHeight/2-(WORLD_H*TILE)/2;
+draw();
+requestAnimationFrame(animate);
 
-// Keyboard controls
-window.addEventListener("keydown", event => {
-  if (event.target.tagName === "INPUT") return;
-
-  const amount = 60 / zoom;
-  let changed = false;
-
-  if (event.key === "ArrowUp") {
-    cameraY -= amount;
-    changed = true;
-  }
-
-  if (event.key === "ArrowDown") {
-    cameraY += amount;
-    changed = true;
-  }
-
-  if (event.key === "ArrowLeft") {
-    cameraX -= amount;
-    changed = true;
-  }
-
-  if (event.key === "ArrowRight") {
-    cameraX += amount;
-    changed = true;
-  }
-
-  if (event.key === "+" || event.key === "=") {
-    setZoom(zoom * 1.2);
-  }
-
-  if (event.key === "-") {
-    setZoom(zoom / 1.2);
-  }
-
-  if (changed) {
-    event.preventDefault();
-    clampCamera();
-    drawWorld();
-  }
-});
-
-// Start game
-clampCamera();
-drawWorld();
-updateStats();
-
+})();
 </script>
 </body>
 </html>
