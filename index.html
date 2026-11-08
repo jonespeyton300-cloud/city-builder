@@ -72,7 +72,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 <div id="gameArea">
 <canvas id="game"></canvas>
 <div id="toast"></div>
-<div id="help">Drag to build roads! Cars obey traffic lights, stop signs, and other vehicles.</div>
+<div id="help">Drag to build roads! Traffic now uses lane-aware following and intersection clearance.</div>
 </div>
 </main>
 
@@ -98,11 +98,7 @@ let dragging=false,paintingRoad=false,lastPointer=null,lastPaintTile=null;
 let toastTimer=null,nextCarId=1;
 const intersectionLocks=new Map();
 
-const prices={
- road:10,house:100,apartment:350,shop:220,
- gas:300,park:100,school:500,police:700,fire:700
-};
-
+const prices={road:10,house:100,apartment:350,shop:220,gas:300,park:100,school:500,police:700,fire:700};
 const buildingInfo={
  house:{w:1,h:1,color:"#c98e55",name:"House"},
  apartment:{w:2,h:2,color:"#b8a6c9",name:"Apartments"},
@@ -120,30 +116,23 @@ const hasRoad=(x,y)=>roads.has(key(x,y));
 const inside=(x,y)=>x>=0&&y>=0&&x<WORLD_W&&y<WORLD_H;
 
 function notify(message){
- toast.textContent=message;
- toast.classList.add("show");
+ toast.textContent=message;toast.classList.add("show");
  clearTimeout(toastTimer);
  toastTimer=setTimeout(()=>toast.classList.remove("show"),1800);
 }
-
 function updateUI(){
  moneyLabel.textContent="$"+money.toLocaleString();
  buildingLabel.textContent=buildings.length;
  carLabel.textContent=cars.length;
 }
-
 function resize(){
  const dpr=Math.min(window.devicePixelRatio||1,2);
  canvas.width=Math.floor(area.clientWidth*dpr);
  canvas.height=Math.floor(area.clientHeight*dpr);
- ctx.setTransform(dpr,0,0,dpr,0,0);
- draw();
+ ctx.setTransform(dpr,0,0,dpr,0,0);draw();
 }
 window.addEventListener("resize",resize);
-
-function screenToWorld(sx,sy){
- return{x:(sx-cameraX)/zoom,y:(sy-cameraY)/zoom};
-}
+function screenToWorld(sx,sy){return{x:(sx-cameraX)/zoom,y:(sy-cameraY)/zoom};}
 function tileAt(sx,sy){
  const p=screenToWorld(sx,sy);
  return{x:Math.floor(p.x/TILE),y:Math.floor(p.y/TILE)};
@@ -155,349 +144,192 @@ function occupied(x,y){return !!buildingAt(x,y);}
 
 function placeTile(x,y){
  if(!inside(x,y))return;
-
  if(selectedTool==="demolish"){
   if(hasRoad(x,y)){
-   roads.delete(key(x,y));
-   cars=[];
-   intersectionLocks.clear();
-   money+=5;
-   notify("Road demolished");
+   roads.delete(key(x,y));cars=[];intersectionLocks.clear();money+=5;notify("Road demolished");
   }else{
    const b=buildingAt(x,y);
-   if(b){
-    buildings=buildings.filter(item=>item!==b);
-    money+=Math.floor((prices[b.type]||0)*0.4);
-    notify(b.name+" demolished");
-   }
+   if(b){buildings=buildings.filter(item=>item!==b);money+=Math.floor((prices[b.type]||0)*.4);notify(b.name+" demolished");}
   }
-  updateUI();
-  return;
+  updateUI();return;
  }
-
  if(selectedTool==="pan")return;
  const price=prices[selectedTool];
  if(money<price){notify("Not enough money!");return;}
-
  if(selectedTool==="road"){
   if(occupied(x,y)||hasRoad(x,y))return;
-  roads.add(key(x,y));
-  money-=price;
-  updateUI();
-  return;
+  roads.add(key(x,y));money-=price;updateUI();return;
  }
-
- const info=buildingInfo[selectedTool];
- if(!info)return;
-
- for(let yy=y;yy<y+info.h;yy++){
-  for(let xx=x;xx<x+info.w;xx++){
-   if(!inside(xx,yy)||hasRoad(xx,yy)||occupied(xx,yy)){
-    notify("Not enough clear space for that building");
-    return;
-   }
+ const info=buildingInfo[selectedTool];if(!info)return;
+ for(let yy=y;yy<y+info.h;yy++)for(let xx=x;xx<x+info.w;xx++){
+  if(!inside(xx,yy)||hasRoad(xx,yy)||occupied(xx,yy)){
+   notify("Not enough clear space for that building");return;
   }
  }
-
  buildings.push({x,y,w:info.w,h:info.h,type:selectedTool,name:info.name});
- money-=price;
- updateUI();
- notify(info.name+" built!");
+ money-=price;updateUI();notify(info.name+" built!");
 }
 
 function neighbors(x,y){
  return{n:hasRoad(x,y-1),e:hasRoad(x+1,y),s:hasRoad(x,y+1),w:hasRoad(x-1,y)};
 }
-function connectionCount(n){
- return Number(n.n)+Number(n.e)+Number(n.s)+Number(n.w);
-}
-function roadDegree(x,y){
- return hasRoad(x,y)?connectionCount(neighbors(x,y)):0;
-}
-function isTrafficLight(x,y){return roadDegree(x,y)===4;}
-function isStopIntersection(x,y){return roadDegree(x,y)===3;}
+function connectionCount(n){return Number(n.n)+Number(n.e)+Number(n.s)+Number(n.w);}
+function roadDegree(x,y){return hasRoad(x,y)?connectionCount(neighbors(x,y)):0;}
 
 function drawSignal(x,y,green){
- ctx.fillStyle="#1b2025";
- ctx.fillRect(x,y,7,17);
- ctx.fillStyle="#ed4747";
- ctx.beginPath();ctx.arc(x+3.5,y+4,2.5,0,Math.PI*2);ctx.fill();
- ctx.fillStyle=green?"#42e36c":"#555";
- ctx.beginPath();ctx.arc(x+3.5,y+12,2.5,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="#1b2025";ctx.fillRect(x,y,7,17);
+ ctx.fillStyle=green?"#42e36c":"#ed4747";
+ ctx.beginPath();ctx.arc(x+3.5,y+8,3,0,Math.PI*2);ctx.fill();
 }
-
 function drawStopSign(x,y){
- ctx.save();
- ctx.translate(x,y);
- ctx.fillStyle="#4b4b4b";
- ctx.fillRect(-1,3,2,9);
- ctx.fillStyle="#e52d32";
- ctx.beginPath();
+ ctx.save();ctx.translate(x,y);
+ ctx.fillStyle="#4b4b4b";ctx.fillRect(-1,3,2,9);
+ ctx.fillStyle="#e52d32";ctx.beginPath();
  for(let i=0;i<8;i++){
-  const a=Math.PI/8+i*Math.PI/4;
-  const px=Math.cos(a)*5,py=Math.sin(a)*5-2;
+  const a=Math.PI/8+i*Math.PI/4,px=Math.cos(a)*5,py=Math.sin(a)*5-2;
   if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
  }
- ctx.closePath();ctx.fill();
- ctx.strokeStyle="#fff";ctx.lineWidth=.8;ctx.stroke();
- ctx.fillStyle="#fff";ctx.font="bold 3.5px Arial";ctx.textAlign="center";
- ctx.fillText("STOP",0,-1);
+ ctx.closePath();ctx.fill();ctx.strokeStyle="#fff";ctx.lineWidth=.8;ctx.stroke();
+ ctx.fillStyle="#fff";ctx.font="bold 3.5px Arial";ctx.textAlign="center";ctx.fillText("STOP",0,-1);
  ctx.restore();
 }
-
 function drawRoad(x,y,px,py){
- const n=neighbors(x,y),count=connectionCount(n);
- const cx=px+TILE/2,cy=py+TILE/2;
-
- ctx.fillStyle="#454a50";
- ctx.fillRect(px,py,TILE,TILE);
-
+ const n=neighbors(x,y),count=connectionCount(n),cx=px+TILE/2,cy=py+TILE/2;
+ ctx.fillStyle="#454a50";ctx.fillRect(px,py,TILE,TILE);
  ctx.fillStyle="#bdbbb1";
  if(!n.n)ctx.fillRect(px,py,TILE,SIDEWALK);
  if(!n.s)ctx.fillRect(px,py+TILE-SIDEWALK,TILE,SIDEWALK);
  if(!n.w)ctx.fillRect(px,py,SIDEWALK,TILE);
  if(!n.e)ctx.fillRect(px+TILE-SIDEWALK,py,SIDEWALK,TILE);
-
  ctx.strokeStyle="#e3e0d5";ctx.lineWidth=1;ctx.beginPath();
  if(!n.n){ctx.moveTo(px,py+SIDEWALK);ctx.lineTo(px+TILE,py+SIDEWALK);}
  if(!n.s){ctx.moveTo(px,py+TILE-SIDEWALK);ctx.lineTo(px+TILE,py+TILE-SIDEWALK);}
  if(!n.w){ctx.moveTo(px+SIDEWALK,py);ctx.lineTo(px+SIDEWALK,py+TILE);}
  if(!n.e){ctx.moveTo(px+TILE-SIDEWALK,py);ctx.lineTo(px+TILE-SIDEWALK,py+TILE);}
  ctx.stroke();
-
- ctx.strokeStyle="#f4d35e";ctx.lineWidth=1.5;ctx.setLineDash([5,5]);
- ctx.beginPath();
+ ctx.strokeStyle="#f4d35e";ctx.lineWidth=1.5;ctx.setLineDash([5,5]);ctx.beginPath();
  if(n.n){ctx.moveTo(cx,cy);ctx.lineTo(cx,py+SIDEWALK);}
  if(n.s){ctx.moveTo(cx,cy);ctx.lineTo(cx,py+TILE-SIDEWALK);}
  if(n.e){ctx.moveTo(cx,cy);ctx.lineTo(px+TILE-SIDEWALK,cy);}
  if(n.w){ctx.moveTo(cx,cy);ctx.lineTo(px+SIDEWALK,cy);}
  ctx.stroke();ctx.setLineDash([]);
-
  if(count===4){
   ctx.fillStyle="#f1f1e9";
-  for(let i=0;i<3;i++){
-   ctx.fillRect(px+7+i*6,py+7,3,5);
-   ctx.fillRect(px+7+i*6,py+TILE-12,3,5);
-  }
-  const verticalGreen=signalClock<7;
-  drawSignal(px+3,py+3,verticalGreen);
-  drawSignal(px+TILE-10,py+TILE-20,!verticalGreen);
+  for(let i=0;i<3;i++){ctx.fillRect(px+7+i*6,py+7,3,5);ctx.fillRect(px+7+i*6,py+TILE-12,3,5);}
+  const green=signalClock<7;
+  drawSignal(px+3,py+3,green);drawSignal(px+TILE-10,py+TILE-20,!green);
  }else if(count===3){
-  // Three-way intersections automatically receive stop signs.
-  drawStopSign(px+TILE-7,py+8);
-  drawStopSign(px+7,py+TILE-7);
+  drawStopSign(px+TILE-7,py+8);drawStopSign(px+7,py+TILE-7);
  }
 }
 
 function findBuildingEntrance(b){
- const left=b.x*TILE,top=b.y*TILE;
- const right=(b.x+b.w)*TILE,bottom=(b.y+b.h)*TILE;
+ const left=b.x*TILE,top=b.y*TILE,right=(b.x+b.w)*TILE,bottom=(b.y+b.h)*TILE;
  const centerX=(left+right)/2,centerY=(top+bottom)/2;
  let best=null,bestDistance=Infinity;
-
  for(const roadKey of roads){
   const [rx,ry]=parseKey(roadKey);
-  const roadLeft=rx*TILE,roadTop=ry*TILE;
-  const roadRight=roadLeft+TILE,roadBottom=roadTop+TILE;
+  const roadLeft=rx*TILE,roadTop=ry*TILE,roadRight=roadLeft+TILE,roadBottom=roadTop+TILE;
   let side,gap,doorX,doorY,targetX,targetY;
-
   if(roadBottom<=top){
    gap=top-roadBottom;side="top";doorX=centerX;doorY=top;
-   targetX=Math.max(roadLeft+SIDEWALK,Math.min(centerX,roadRight-SIDEWALK));
-   targetY=roadBottom-SIDEWALK/2;
+   targetX=Math.max(roadLeft+SIDEWALK,Math.min(centerX,roadRight-SIDEWALK));targetY=roadBottom-SIDEWALK/2;
   }else if(roadTop>=bottom){
    gap=roadTop-bottom;side="bottom";doorX=centerX;doorY=bottom;
-   targetX=Math.max(roadLeft+SIDEWALK,Math.min(centerX,roadRight-SIDEWALK));
-   targetY=roadTop+SIDEWALK/2;
+   targetX=Math.max(roadLeft+SIDEWALK,Math.min(centerX,roadRight-SIDEWALK));targetY=roadTop+SIDEWALK/2;
   }else if(roadRight<=left){
    gap=left-roadRight;side="left";doorX=left;doorY=centerY;
-   targetX=roadRight-SIDEWALK/2;
-   targetY=Math.max(roadTop+SIDEWALK,Math.min(centerY,roadBottom-SIDEWALK));
+   targetX=roadRight-SIDEWALK/2;targetY=Math.max(roadTop+SIDEWALK,Math.min(centerY,roadBottom-SIDEWALK));
   }else if(roadLeft>=right){
    gap=roadLeft-right;side="right";doorX=right;doorY=centerY;
-   targetX=roadLeft+SIDEWALK/2;
-   targetY=Math.max(roadTop+SIDEWALK,Math.min(centerY,roadBottom-SIDEWALK));
+   targetX=roadLeft+SIDEWALK/2;targetY=Math.max(roadTop+SIDEWALK,Math.min(centerY,roadBottom-SIDEWALK));
   }else continue;
-
   if(gap>MAX_ENTRANCE_DISTANCE*TILE)continue;
-  const distance=gap+Math.abs(
-   side==="top"||side==="bottom"
-    ?centerX-(roadLeft+TILE/2)
-    :centerY-(roadTop+TILE/2)
-  )*.15;
-
-  if(distance<bestDistance){
-   bestDistance=distance;
-   best={side,doorX,doorY,targetX,targetY};
-  }
+  const distance=gap+Math.abs(side==="top"||side==="bottom"?centerX-(roadLeft+TILE/2):centerY-(roadTop+TILE/2))*.15;
+  if(distance<bestDistance){bestDistance=distance;best={side,doorX,doorY,targetX,targetY};}
  }
  return best;
 }
-
 function drawBuildingWalkway(b){
  const e=findBuildingEntrance(b);if(!e)return;
- ctx.lineCap="square";ctx.strokeStyle="#bdbbb1";ctx.lineWidth=7;
- ctx.beginPath();ctx.moveTo(e.doorX,e.doorY);
- if(e.side==="top"||e.side==="bottom"){
-  ctx.lineTo(e.doorX,e.targetY);ctx.lineTo(e.targetX,e.targetY);
- }else{
-  ctx.lineTo(e.targetX,e.doorY);ctx.lineTo(e.targetX,e.targetY);
- }
- ctx.stroke();
- ctx.strokeStyle="#d8d5ca";ctx.lineWidth=1;ctx.beginPath();
- ctx.moveTo(e.doorX,e.doorY);
- if(e.side==="top"||e.side==="bottom"){
-  ctx.lineTo(e.doorX,e.targetY);ctx.lineTo(e.targetX,e.targetY);
- }else{
-  ctx.lineTo(e.targetX,e.doorY);ctx.lineTo(e.targetX,e.targetY);
- }
+ ctx.lineCap="square";ctx.strokeStyle="#bdbbb1";ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(e.doorX,e.doorY);
+ if(e.side==="top"||e.side==="bottom"){ctx.lineTo(e.doorX,e.targetY);ctx.lineTo(e.targetX,e.targetY);}
+ else{ctx.lineTo(e.targetX,e.doorY);ctx.lineTo(e.targetX,e.targetY);}
+ ctx.stroke();ctx.strokeStyle="#d8d5ca";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(e.doorX,e.doorY);
+ if(e.side==="top"||e.side==="bottom"){ctx.lineTo(e.doorX,e.targetY);ctx.lineTo(e.targetX,e.targetY);}
+ else{ctx.lineTo(e.targetX,e.doorY);ctx.lineTo(e.targetX,e.targetY);}
  ctx.stroke();ctx.lineCap="butt";
 }
-
 function drawBuilding(b){
  const px=b.x*TILE,py=b.y*TILE,w=b.w*TILE,h=b.h*TILE;
  ctx.fillStyle="#777b7b";ctx.fillRect(px+2,py+2,w-4,h-4);
  ctx.fillStyle=buildingInfo[b.type].color;ctx.fillRect(px+5,py+5,w-10,h-10);
  ctx.strokeStyle="#353a3e";ctx.lineWidth=2;ctx.strokeRect(px+5,py+5,w-10,h-10);
-
  if(b.type==="house"){
-  ctx.fillStyle="#874b36";ctx.beginPath();
-  ctx.moveTo(px+4,py+13);ctx.lineTo(px+TILE/2,py+3);ctx.lineTo(px+TILE-4,py+13);
-  ctx.closePath();ctx.fill();
+  ctx.fillStyle="#874b36";ctx.beginPath();ctx.moveTo(px+4,py+13);ctx.lineTo(px+TILE/2,py+3);ctx.lineTo(px+TILE-4,py+13);ctx.closePath();ctx.fill();
   ctx.fillStyle="#f4e3bf";ctx.fillRect(px+7,py+16,7,8);ctx.fillRect(px+19,py+16,7,8);
  }else if(b.type==="park"){
   ctx.fillStyle="#367b3c";
-  for(let i=0;i<5;i++){
-   const tx=px+12+(i%3)*19,ty=py+13+Math.floor(i/3)*25;
-   ctx.beginPath();ctx.arc(tx,ty,6,0,Math.PI*2);ctx.fill();
-   ctx.fillStyle="#765b3b";ctx.fillRect(tx-1,ty+4,2,7);ctx.fillStyle="#367b3c";
-  }
+  for(let i=0;i<5;i++){const tx=px+12+(i%3)*19,ty=py+13+Math.floor(i/3)*25;ctx.beginPath();ctx.arc(tx,ty,6,0,Math.PI*2);ctx.fill();ctx.fillStyle="#765b3b";ctx.fillRect(tx-1,ty+4,2,7);ctx.fillStyle="#367b3c";}
  }else if(b.type==="gas"){
-  ctx.fillStyle="#f5f1e8";ctx.fillRect(px+12,py+14,17,18);
-  ctx.fillStyle="#d64e42";ctx.fillRect(px+14,py+16,13,5);
-  ctx.fillStyle="#252d34";ctx.fillRect(px+31,py+20,7,10);
-  ctx.fillStyle="#fff";ctx.font="bold 8px Arial";ctx.fillText("GAS",px+15,py+27);
+  ctx.fillStyle="#f5f1e8";ctx.fillRect(px+12,py+14,17,18);ctx.fillStyle="#d64e42";ctx.fillRect(px+14,py+16,13,5);ctx.fillStyle="#252d34";ctx.fillRect(px+31,py+20,7,10);ctx.fillStyle="#fff";ctx.font="bold 8px Arial";ctx.fillText("GAS",px+15,py+27);
  }else if(b.type==="school"){
-  ctx.fillStyle="#fff0c5";ctx.fillRect(px+15,py+14,w-30,h-23);
-  ctx.fillStyle="#bd4c43";ctx.fillRect(px+10,py+7,w-20,8);
-  ctx.fillStyle="#414d5c";ctx.font="bold 12px Arial";ctx.fillText("SCHOOL",px+15,py+h-9);
+  ctx.fillStyle="#fff0c5";ctx.fillRect(px+15,py+14,w-30,h-23);ctx.fillStyle="#bd4c43";ctx.fillRect(px+10,py+7,w-20,8);ctx.fillStyle="#414d5c";ctx.font="bold 12px Arial";ctx.fillText("SCHOOL",px+15,py+h-9);
  }else{
-  ctx.fillStyle="#e7e8e5";
-  for(let yy=0;yy<2;yy++)for(let xx=0;xx<2;xx++)
-   ctx.fillRect(px+12+xx*20,py+12+yy*19,9,10);
-  if(b.type==="apartment"){
-   ctx.fillStyle="#514c58";ctx.fillRect(px+w/2-5,py+h-17,10,12);
-  }
-  if(b.type==="police"||b.type==="fire"){
-   ctx.fillStyle=b.type==="police"?"#244e86":"#a52d27";
-   ctx.fillRect(px+w/2-12,py+5,24,9);
-   ctx.fillStyle="#fff";ctx.font="bold 7px Arial";
-   ctx.fillText(b.type==="police"?"POLICE":"FIRE",px+w/2-10,py+12);
-  }
-  if(b.type==="shop"){
-   ctx.fillStyle="#fff0ce";ctx.fillRect(px+10,py+8,w-20,9);
-   ctx.fillStyle="#333";ctx.font="bold 9px Arial";ctx.fillText("STORE",px+15,py+16);
-  }
+  ctx.fillStyle="#e7e8e5";for(let yy=0;yy<2;yy++)for(let xx=0;xx<2;xx++)ctx.fillRect(px+12+xx*20,py+12+yy*19,9,10);
+  if(b.type==="apartment"){ctx.fillStyle="#514c58";ctx.fillRect(px+w/2-5,py+h-17,10,12);}
+  if(b.type==="police"||b.type==="fire"){ctx.fillStyle=b.type==="police"?"#244e86":"#a52d27";ctx.fillRect(px+w/2-12,py+5,24,9);ctx.fillStyle="#fff";ctx.font="bold 7px Arial";ctx.fillText(b.type==="police"?"POLICE":"FIRE",px+w/2-10,py+12);}
+  if(b.type==="shop"){ctx.fillStyle="#fff0ce";ctx.fillRect(px+10,py+8,w-20,9);ctx.fillStyle="#333";ctx.font="bold 9px Arial";ctx.fillText("STORE",px+15,py+16);}
  }
- drawBuildingDoor(b,px,py,w,h);
+ const e=findBuildingEntrance(b);if(e){ctx.fillStyle="#49362c";if(e.side==="top")ctx.fillRect(e.doorX-4,e.doorY+1,8,5);else if(e.side==="bottom")ctx.fillRect(e.doorX-4,e.doorY-6,8,5);else if(e.side==="left")ctx.fillRect(e.doorX+1,e.doorY-4,5,8);else ctx.fillRect(e.doorX-6,e.doorY-4,5,8);}
 }
-
-function drawBuildingDoor(b,px,py,w,h){
- const e=findBuildingEntrance(b);if(!e)return;
- ctx.fillStyle="#49362c";
- if(e.side==="top")ctx.fillRect(e.doorX-4,e.doorY+1,8,5);
- else if(e.side==="bottom")ctx.fillRect(e.doorX-4,e.doorY-6,8,5);
- else if(e.side==="left")ctx.fillRect(e.doorX+1,e.doorY-4,5,8);
- else if(e.side==="right")ctx.fillRect(e.doorX-6,e.doorY-4,5,8);
-}
-
 function drawCar(car){
  ctx.save();ctx.translate(car.x,car.y);ctx.rotate(car.angle);
- ctx.fillStyle="#171a1d";
- ctx.fillRect(-7,-5,4,2);ctx.fillRect(3,-5,4,2);
- ctx.fillRect(-7,3,4,2);ctx.fillRect(3,3,4,2);
+ ctx.fillStyle="#171a1d";ctx.fillRect(-7,-5,4,2);ctx.fillRect(3,-5,4,2);ctx.fillRect(-7,3,4,2);ctx.fillRect(3,3,4,2);
  ctx.fillStyle=car.color;ctx.beginPath();ctx.roundRect(-9,-5,18,10,3);ctx.fill();
  ctx.fillStyle="#9bc7dc";ctx.fillRect(2,-3,4,6);
  ctx.fillStyle="#fff4bd";ctx.fillRect(8,-4,2,3);ctx.fillRect(8,1,2,3);
  ctx.fillStyle="#e84c45";ctx.fillRect(-9,-4,2,3);ctx.fillRect(-9,1,2,3);
  ctx.restore();
 }
-
 function draw(){
- const width=area.clientWidth,height=area.clientHeight;
- ctx.clearRect(0,0,width,height);
+ const width=area.clientWidth,height=area.clientHeight;ctx.clearRect(0,0,width,height);
  ctx.save();ctx.translate(cameraX,cameraY);ctx.scale(zoom,zoom);
-
- const left=Math.max(0,Math.floor(-cameraX/(TILE*zoom))-1);
- const top=Math.max(0,Math.floor(-cameraY/(TILE*zoom))-1);
- const right=Math.min(WORLD_W,Math.ceil((width-cameraX)/(TILE*zoom))+1);
- const bottom=Math.min(WORLD_H,Math.ceil((height-cameraY)/(TILE*zoom))+1);
-
+ const left=Math.max(0,Math.floor(-cameraX/(TILE*zoom))-1),top=Math.max(0,Math.floor(-cameraY/(TILE*zoom))-1);
+ const right=Math.min(WORLD_W,Math.ceil((width-cameraX)/(TILE*zoom))+1),bottom=Math.min(WORLD_H,Math.ceil((height-cameraY)/(TILE*zoom))+1);
  for(let y=top;y<bottom;y++)for(let x=left;x<right;x++){
-  const px=x*TILE,py=y*TILE;
-  ctx.fillStyle=((x+y)%2===0)?"#648b50":"#60864d";
-  ctx.fillRect(px,py,TILE,TILE);
-  if((x*7+y*13)%17===0){
-   ctx.fillStyle="#72965d";ctx.fillRect(px+8,py+9,2,2);
-  }
+  const px=x*TILE,py=y*TILE;ctx.fillStyle=((x+y)%2===0)?"#648b50":"#60864d";ctx.fillRect(px,py,TILE,TILE);
+  if((x*7+y*13)%17===0){ctx.fillStyle="#72965d";ctx.fillRect(px+8,py+9,2,2);}
  }
- for(let y=top;y<bottom;y++)for(let x=left;x<right;x++)
-  if(hasRoad(x,y))drawRoad(x,y,x*TILE,y*TILE);
-
+ for(let y=top;y<bottom;y++)for(let x=left;x<right;x++)if(hasRoad(x,y))drawRoad(x,y,x*TILE,y*TILE);
  for(const b of buildings)drawBuildingWalkway(b);
  for(const b of buildings)drawBuilding(b);
  for(const car of cars)drawCar(car);
-
- ctx.strokeStyle="#344b36";ctx.lineWidth=4;
- ctx.strokeRect(0,0,WORLD_W*TILE,WORLD_H*TILE);
+ ctx.strokeStyle="#344b36";ctx.lineWidth=4;ctx.strokeRect(0,0,WORLD_W*TILE,WORLD_H*TILE);
  ctx.restore();
 }
 
 function findPath(start,goal){
- const queue=[start],cameFrom=new Map([[start,null]]);
- const dirs=[[0,-1],[1,0],[0,1],[-1,0]];
+ const queue=[start],cameFrom=new Map([[start,null]]),dirs=[[0,-1],[1,0],[0,1],[-1,0]];
  let found=false;
  while(queue.length){
-  const current=queue.shift();
-  if(current===goal){found=true;break;}
+  const current=queue.shift();if(current===goal){found=true;break;}
   const [x,y]=parseKey(current);
-  for(const [dx,dy] of dirs){
-   const nx=x+dx,ny=y+dy,next=key(nx,ny);
-   if(hasRoad(nx,ny)&&!cameFrom.has(next)){
-    cameFrom.set(next,current);queue.push(next);
-   }
-  }
+  for(const [dx,dy] of dirs){const nx=x+dx,ny=y+dy,next=key(nx,ny);if(hasRoad(nx,ny)&&!cameFrom.has(next)){cameFrom.set(next,current);queue.push(next);}}
  }
  if(!found)return null;
- const path=[];let current=goal;
- while(current!==null){path.push(current);current=cameFrom.get(current);}
- return path.reverse();
+ const path=[];let current=goal;while(current!==null){path.push(current);current=cameFrom.get(current);}return path.reverse();
 }
-
 function spawnCar(){
- const roadList=[...roads];
- if(roadList.length<5)return;
- const start=roadList[Math.floor(Math.random()*roadList.length)];
- const goal=roadList[Math.floor(Math.random()*roadList.length)];
+ const list=[...roads];if(list.length<5)return;
+ const start=list[Math.floor(Math.random()*list.length)],goal=list[Math.floor(Math.random()*list.length)];
  if(start===goal)return;
- const path=findPath(start,goal);
- if(!path||path.length<2)return;
-
+ const path=findPath(start,goal);if(!path||path.length<2)return;
  const colors=["#e7e7e7","#c84e45","#477db5","#252a30","#d4ad4b","#3b9c75"];
- const [x,y]=parseKey(path[0]),[nx,ny]=parseKey(path[1]);
- const dx=nx-x,dy=ny-y;
-
- // Avoid spawning a new vehicle directly on top of another one.
- const spawnX=x*TILE+TILE/2,spawnY=y*TILE+TILE/2;
- if(cars.some(c=>Math.hypot(c.x-spawnX,c.y-spawnY)<27))return;
-
- cars.push({
-  id:nextCarId++,path,index:0,progress:0,
-  x:spawnX,y:spawnY,dx,dy,angle:Math.atan2(dy,dx),
-  speed:34+Math.random()*18,
-  color:colors[Math.floor(Math.random()*colors.length)],
-  stopTimer:0,lockedIntersection:null
- });
+ const [x,y]=parseKey(path[0]),[nx,ny]=parseKey(path[1]),dx=nx-x,dy=ny-y;
+ const sx=x*TILE+TILE/2,sy=y*TILE+TILE/2;
+ if(cars.some(c=>Math.hypot(c.x-sx,c.y-sy)<25))return;
+ cars.push({id:nextCarId++,path,index:0,progress:0,x:sx,y:sy,dx,dy,angle:Math.atan2(dy,dx),speed:34+Math.random()*18,color:colors[Math.floor(Math.random()*colors.length)],insideIntersection:false,stopTimer:0,stopAt:null});
 }
 
 function laneOffset(dx,dy){
@@ -505,20 +337,20 @@ function laneOffset(dx,dy){
  return{x:0,y:dx>0?5:-5};
 }
 function lerp(a,b,t){return a+(b-a)*t;}
-function lerpAngle(a,b,t){
- let d=b-a;
- while(d>Math.PI)d-=Math.PI*2;
- while(d< -Math.PI)d+=Math.PI*2;
- return a+d*t;
-}
+function lerpAngle(a,b,t){let d=b-a;while(d>Math.PI)d-=Math.PI*2;while(d< -Math.PI)d+=Math.PI*2;return a+d*t;}
 
+/*
+ Cars are compared only when they are moving in the same direction
+ and occupying the same lane. Opposing traffic is ignored.
+*/
 function carAhead(car,dx,dy){
  for(const other of cars){
   if(other===car)continue;
+  if(other.dx!==dx||other.dy!==dy)continue;
   const vx=other.x-car.x,vy=other.y-car.y;
   const forward=vx*dx+vy*dy;
   const side=Math.abs(vx*(-dy)+vy*dx);
-  if(forward>0&&forward<23&&side<11)return true;
+  if(forward>0&&forward<24&&side<7)return true;
  }
  return false;
 }
@@ -526,206 +358,136 @@ function carAhead(car,dx,dy){
 function updateCars(dt){
  for(let i=cars.length-1;i>=0;i--){
   const car=cars[i];
+  if(car.index>=car.path.length-1){cars.splice(i,1);continue;}
 
-  if(car.index>=car.path.length-1){
-   if(car.lockedIntersection)intersectionLocks.delete(car.lockedIntersection);
-   cars.splice(i,1);continue;
-  }
+  const a=parseKey(car.path[car.index]),b=parseKey(car.path[car.index+1]);
+  const dx=b[0]-a[0],dy=b[1]-a[1];
+  const destinationKey=key(b[0],b[1]);
+  const degree=roadDegree(b[0],b[1]);
+  const light=degree===4,stop=degree===3;
 
-  const current=parseKey(car.path[car.index]);
-  const next=parseKey(car.path[car.index+1]);
-  const dx=next[0]-current[0],dy=next[1]-current[1];
-  const nextKey=key(next[0],next[1]);
-  const degree=roadDegree(next[0],next[1]);
-  const isLight=degree===4;
-  const isStop=degree===3;
+  // A vehicle that has entered an intersection must always clear it.
+  const entered=car.insideIntersection;
 
-  let maxProgress=1;
-
-  // Stop before entering a red-light intersection.
-  if(isLight){
+  // Stop before the intersection, not in its center.
+  let allowedProgress=1;
+  if(!entered&&light){
    const vertical=dy!==0;
    const green=vertical?signalClock<7:signalClock>=7;
-   if(!green)maxProgress=.72;
+   if(!green)allowedProgress=.68;
   }
 
-  // Stop-sign intersections: pause, then wait for the intersection to clear.
-  if(isStop){
-   maxProgress=.72;
-   if(car.stopAt!==nextKey){
-    car.stopAt=nextKey;
-    car.stopTimer=.85;
-   }
-   if(car.progress>=.72){
+  // Stop signs: pause at the approach line, then proceed.
+  if(!entered&&stop){
+   allowedProgress=.68;
+   if(car.stopAt!==destinationKey){car.stopAt=destinationKey;car.stopTimer=.8;}
+   if(car.progress>=.68){
     car.stopTimer=Math.max(0,car.stopTimer-dt);
-    const lockOwner=intersectionLocks.get(nextKey);
-    if(car.stopTimer<=0&&(!lockOwner||lockOwner===car.id)){
-     intersectionLocks.set(nextKey,car.id);
-     car.lockedIntersection=nextKey;
-     maxProgress=1;
+    const owner=intersectionLocks.get(destinationKey);
+    if(car.stopTimer<=0&&(!owner||owner===car.id)){
+     intersectionLocks.set(destinationKey,car.id);
+     car.insideIntersection=true;
+     allowedProgress=1;
     }
    }
-  }else{
-   car.stopAt=null;
-   car.stopTimer=0;
+  }else if(!stop){car.stopAt=null;car.stopTimer=0;}
+
+  // A green light or cleared stop sign allows the car to enter.
+  if(!entered&&light){
+   const vertical=dy!==0;
+   const green=vertical?signalClock<7:signalClock>=7;
+   if(green&&car.progress>=.68)car.insideIntersection=true;
   }
 
-  // Keep a safe following distance behind other vehicles.
-  if(carAhead(car,dx,dy)){
-   maxProgress=Math.min(maxProgress,Math.max(0,car.progress));
+  // Check vehicles in the same lane, but do not block oncoming cars.
+  if(!car.insideIntersection&&carAhead(car,dx,dy)){
+   allowedProgress=Math.min(allowedProgress,Math.max(0,car.progress));
   }
 
-  car.progress=Math.min(maxProgress,car.progress+car.speed*dt/TILE);
+  const previousProgress=car.progress;
+  car.progress=Math.min(allowedProgress,car.progress+car.speed*dt/TILE);
+
+  // A vehicle has cleared the intersection once it moves onto the
+  // next road tile after the intersection tile.
+  if(car.insideIntersection&&car.progress<previousProgress){
+   car.insideIntersection=false;
+  }
 
   while(car.progress>=1){
    car.progress-=1;
    car.index++;
-
-   if(car.lockedIntersection&&car.path[car.index]===car.lockedIntersection){
-    // The vehicle has entered the intersection. Release it after crossing.
-    car.releaseLockAfter=true;
-   }
-
-   if(car.index>=car.path.length-1){
-    if(car.lockedIntersection)intersectionLocks.delete(car.lockedIntersection);
-    cars.splice(i,1);break;
-   }
+   car.insideIntersection=false;
+   if(intersectionLocks.get(destinationKey)===car.id)intersectionLocks.delete(destinationKey);
+   if(car.index>=car.path.length-1){cars.splice(i,1);break;}
   }
   if(cars[i]!==car)continue;
 
-  const a=parseKey(car.path[car.index]);
-  const b=parseKey(car.path[car.index+1]);
-  const moveX=b[0]-a[0],moveY=b[1]-a[1];
-  const startOffset=laneOffset(moveX,moveY);
-  let endOffset=startOffset;
-  const currentAngle=Math.atan2(moveY,moveX);
-  let nextAngle=currentAngle;
-
+  const from=parseKey(car.path[car.index]),to=parseKey(car.path[car.index+1]);
+  const mx=to[0]-from[0],my=to[1]-from[1];
+  const startOffset=laneOffset(mx,my);
+  let endOffset=startOffset,nextAngle=Math.atan2(my,mx);
   if(car.index+2<car.path.length){
-   const c=parseKey(car.path[car.index+2]);
-   const ndx=c[0]-b[0],ndy=c[1]-b[1];
-   endOffset=laneOffset(ndx,ndy);
-   nextAngle=Math.atan2(ndy,ndx);
+   const c=parseKey(car.path[car.index+2]),ndx=c[0]-to[0],ndy=c[1]-to[1];
+   endOffset=laneOffset(ndx,ndy);nextAngle=Math.atan2(ndy,ndx);
   }
-
-  const turnProgress=Math.max(0,Math.min(1,(car.progress-.65)/.35));
-  const smoothTurn=turnProgress*turnProgress*(3-2*turnProgress);
-  const offsetX=lerp(startOffset.x,endOffset.x,smoothTurn);
-  const offsetY=lerp(startOffset.y,endOffset.y,smoothTurn);
-
-  car.x=(a[0]+moveX*car.progress)*TILE+TILE/2+offsetX;
-  car.y=(a[1]+moveY*car.progress)*TILE+TILE/2+offsetY;
-  car.angle=lerpAngle(currentAngle,nextAngle,smoothTurn);
-  car.dx=moveX;car.dy=moveY;
-
-  // Release a stop-sign intersection lock once the car has crossed it.
-  if(car.releaseLockAfter&&car.progress>.65){
-   if(car.lockedIntersection)intersectionLocks.delete(car.lockedIntersection);
-   car.lockedIntersection=null;
-   car.releaseLockAfter=false;
-  }
+  const angle=Math.atan2(my,mx);
+  const t=Math.max(0,Math.min(1,(car.progress-.65)/.35));
+  const smooth=t*t*(3-2*t);
+  car.x=(from[0]+mx*car.progress)*TILE+TILE/2+lerp(startOffset.x,endOffset.x,smooth);
+  car.y=(from[1]+my*car.progress)*TILE+TILE/2+lerp(startOffset.y,endOffset.y,smooth);
+  car.angle=lerpAngle(angle,nextAngle,smooth);
+  car.dx=mx;car.dy=my;
  }
  updateUI();
 }
 
 function animate(time){
- const dt=Math.min((time-lastTime)/1000||0,.05);
- lastTime=time;
- signalClock=(signalClock+dt)%14;
- spawnTimer+=dt;
- if(spawnTimer>2.5){
-  spawnTimer=0;
-  if(cars.length<12)spawnCar();
- }
- updateCars(dt);
- draw();
- requestAnimationFrame(animate);
+ const dt=Math.min((time-lastTime)/1000||0,.05);lastTime=time;
+ signalClock=(signalClock+dt)%14;spawnTimer+=dt;
+ if(spawnTimer>2.5){spawnTimer=0;if(cars.length<12)spawnCar();}
+ updateCars(dt);draw();requestAnimationFrame(animate);
 }
 
 /* Tool selection */
-document.querySelectorAll(".tool").forEach(button=>{
- button.addEventListener("click",()=>{
-  selectedTool=button.dataset.tool;
-  document.querySelectorAll(".tool").forEach(b=>b.classList.remove("active"));
-  button.classList.add("active");
- });
-});
+document.querySelectorAll(".tool").forEach(button=>button.addEventListener("click",()=>{
+ selectedTool=button.dataset.tool;
+ document.querySelectorAll(".tool").forEach(b=>b.classList.remove("active"));
+ button.classList.add("active");
+}));
 
-/* Road painting and camera controls */
 canvas.addEventListener("pointerdown",e=>{
- canvas.setPointerCapture(e.pointerId);
- lastPointer={x:e.offsetX,y:e.offsetY};
- dragging=selectedTool==="pan";
- paintingRoad=selectedTool==="road";
-
- if(paintingRoad){
-  const tile=tileAt(e.offsetX,e.offsetY);
-  lastPaintTile=key(tile.x,tile.y);
-  placeTile(tile.x,tile.y);draw();
- }else if(!dragging){
-  const tile=tileAt(e.offsetX,e.offsetY);
-  placeTile(tile.x,tile.y);draw();
- }
+ canvas.setPointerCapture(e.pointerId);lastPointer={x:e.offsetX,y:e.offsetY};
+ dragging=selectedTool==="pan";paintingRoad=selectedTool==="road";
+ if(paintingRoad){const t=tileAt(e.offsetX,e.offsetY);lastPaintTile=key(t.x,t.y);placeTile(t.x,t.y);draw();}
+ else if(!dragging){const t=tileAt(e.offsetX,e.offsetY);placeTile(t.x,t.y);draw();}
 });
-
 function paintLine(x0,y0,x1,y1){
- // Fill every tile between pointer positions so fast drags do not leave gaps.
- let dx=Math.abs(x1-x0),sx=x0<x1?1:-1;
- let dy=-Math.abs(y1-y0),sy=y0<y1?1:-1;
- let err=dx+dy;
- while(true){
-  const k=key(x0,y0);
-  if(k!==lastPaintTile){placeTile(x0,y0);lastPaintTile=k;}
-  if(x0===x1&&y0===y1)break;
-  const e2=2*err;
-  if(e2>=dy){err+=dy;x0+=sx;}
-  if(e2<=dx){err+=dx;y0+=sy;}
- }
+ let dx=Math.abs(x1-x0),sx=x0<x1?1:-1,dy=-Math.abs(y1-y0),sy=y0<y1?1:-1,err=dx+dy;
+ while(true){const k=key(x0,y0);if(k!==lastPaintTile){placeTile(x0,y0);lastPaintTile=k;}if(x0===x1&&y0===y1)break;const e2=2*err;if(e2>=dy){err+=dy;x0+=sx;}if(e2<=dx){err+=dx;y0+=sy;}}
 }
-
 canvas.addEventListener("pointermove",e=>{
- if(dragging&&lastPointer){
-  cameraX+=e.offsetX-lastPointer.x;
-  cameraY+=e.offsetY-lastPointer.y;
-  lastPointer={x:e.offsetX,y:e.offsetY};
-  draw();return;
- }
+ if(dragging&&lastPointer){cameraX+=e.offsetX-lastPointer.x;cameraY+=e.offsetY-lastPointer.y;lastPointer={x:e.offsetX,y:e.offsetY};draw();return;}
  if(paintingRoad&&selectedTool==="road"){
-  const tile=tileAt(e.offsetX,e.offsetY);
-  const previous=lastPaintTile?parseKey(lastPaintTile):[tile.x,tile.y];
-  paintLine(previous[0],previous[1],tile.x,tile.y);
-  draw();
+  const t=tileAt(e.offsetX,e.offsetY),p=lastPaintTile?parseKey(lastPaintTile):[t.x,t.y];
+  paintLine(p[0],p[1],t.x,t.y);draw();
  }
 });
-
-function endPointer(){
- dragging=false;paintingRoad=false;lastPointer=null;lastPaintTile=null;
-}
+function endPointer(){dragging=false;paintingRoad=false;lastPointer=null;lastPaintTile=null;}
 canvas.addEventListener("pointerup",endPointer);
 canvas.addEventListener("pointercancel",endPointer);
 canvas.addEventListener("lostpointercapture",endPointer);
 
 canvas.addEventListener("wheel",e=>{
- e.preventDefault();
- const oldZoom=zoom,factor=e.deltaY<0?1.12:.89;
- const nextZoom=Math.max(.5,Math.min(2.5,zoom*factor));
- const wx=(e.offsetX-cameraX)/oldZoom;
- const wy=(e.offsetY-cameraY)/oldZoom;
- zoom=nextZoom;
- cameraX=e.offsetX-wx*zoom;
- cameraY=e.offsetY-wy*zoom;
- draw();
+ e.preventDefault();const old=zoom,factor=e.deltaY<0?1.12:.89;
+ const next=Math.max(.5,Math.min(2.5,zoom*factor));
+ const wx=(e.offsetX-cameraX)/old,wy=(e.offsetY-cameraY)/old;
+ zoom=next;cameraX=e.offsetX-wx*zoom;cameraY=e.offsetY-wy*zoom;draw();
 },{passive:false});
-
 document.getElementById("zoomIn").onclick=()=>{zoom=Math.min(2.5,zoom*1.2);draw();};
 document.getElementById("zoomOut").onclick=()=>{zoom=Math.max(.5,zoom/1.2);draw();};
 document.getElementById("resetCamera").onclick=()=>{
- zoom=1;
- cameraX=area.clientWidth/2-(WORLD_W*TILE)/2;
- cameraY=area.clientHeight/2-(WORLD_H*TILE)/2;
- draw();
+ zoom=1;cameraX=area.clientWidth/2-(WORLD_W*TILE)/2;cameraY=area.clientHeight/2-(WORLD_H*TILE)/2;draw();
 };
-
 window.addEventListener("keydown",e=>{
  const amount=35;
  if(e.key==="ArrowUp")cameraY+=amount;
@@ -734,51 +496,34 @@ window.addEventListener("keydown",e=>{
  else if(e.key==="ArrowRight")cameraX-=amount;
  else if(e.key==="+"||e.key==="=")zoom=Math.min(2.5,zoom*1.15);
  else if(e.key==="-")zoom=Math.max(.5,zoom/1.15);
- else return;
- draw();
+ else return;draw();
 });
 
 /* Save and load */
 function saveCity(){
- const data={money,roads:[...roads],buildings};
- try{
-  localStorage.setItem("americanCityBuilderSave",JSON.stringify(data));
-  notify("City saved on this device!");
- }catch(e){notify("Could not save this city.");}
+ try{localStorage.setItem("americanCityBuilderSave",JSON.stringify({money,roads:[...roads],buildings}));notify("City saved on this device!");}
+ catch(e){notify("Could not save this city.");}
 }
-
 function loadCity(){
  try{
-  const raw=localStorage.getItem("americanCityBuilderSave");
-  if(!raw){notify("No saved city found.");return;}
-  const data=JSON.parse(raw);
-  if(!Array.isArray(data.roads)||!Array.isArray(data.buildings))throw new Error();
-  money=Number(data.money)||0;
-  roads=new Set(data.roads);
-  buildings=data.buildings;
-  cars=[];intersectionLocks.clear();
+  const raw=localStorage.getItem("americanCityBuilderSave");if(!raw){notify("No saved city found.");return;}
+  const data=JSON.parse(raw);if(!Array.isArray(data.roads)||!Array.isArray(data.buildings))throw new Error();
+  money=Number(data.money)||0;roads=new Set(data.roads);buildings=data.buildings;cars=[];intersectionLocks.clear();
   updateUI();draw();notify("City loaded!");
  }catch(e){notify("Save file could not be loaded.");}
 }
-
 document.getElementById("save").onclick=saveCity;
 document.getElementById("load").onclick=loadCity;
-
 document.getElementById("newCity").onclick=()=>{
  if(!confirm("Start a new city? Unsaved progress will be lost."))return;
- money=5000;roads=new Set();buildings=[];cars=[];
- intersectionLocks.clear();
- updateUI();draw();notify("New city started!");
+ money=5000;roads=new Set();buildings=[];cars=[];intersectionLocks.clear();updateUI();draw();notify("New city started!");
 };
 
-/* Start game */
-updateUI();
-resize();
+/* Start */
+updateUI();resize();
 cameraX=area.clientWidth/2-(WORLD_W*TILE)/2;
 cameraY=area.clientHeight/2-(WORLD_H*TILE)/2;
-draw();
-requestAnimationFrame(animate);
-
+draw();requestAnimationFrame(animate);
 })();
 </script>
 </body>
